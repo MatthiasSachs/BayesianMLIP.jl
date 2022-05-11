@@ -19,8 +19,8 @@ struct FSModel
     c2  # = a'
 end
 
-function ACE.evaluate(m::FSModel, at)
-    nlist = neighbourlist(at, m.rcut)
+function ACE.evaluate(m::FSModel, at) #at = atoms, at.X = positions of all atoms, at.Z = species, at.P = momenta, at.pbc = periodic boundary conditions 
+    nlist = neighbourlist(at, m.rcut) #a neighb
     lin_part, nonlin_part = 0.0,0.0
     for k = 1:length(at)
         _, Rs = NeighbourLists.neigs(nlist, k)
@@ -32,6 +32,7 @@ function ACE.evaluate(m::FSModel, at)
     end
     return lin_part + nonlin_part
 end
+
 
 # Test BlaBla
 function ACE.evaluate_d(m::FSModel, at)

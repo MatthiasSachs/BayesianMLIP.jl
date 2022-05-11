@@ -25,7 +25,10 @@ rattle!(at,0.1)
 #Create FM model
 model = FSModel(basis1, basis2, 
                             rcut, 
-                            x -> sqrt(x), 
+                            x -> -sqrt(x), 
+                            x -> 1 / (2 * sqrt(x)), 
                             ones(length(basis1)), ones(length(basis2)))
 #Evaluate model at bulk configuration
 E = ACE.evaluate(model, at)
+
+println(typeof(at)) #Atoms{Float64}   

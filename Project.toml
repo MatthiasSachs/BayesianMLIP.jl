@@ -2,8 +2,10 @@ name = "BayesianMLIP"
 uuid = "6e16c878-8cd3-48c7-8379-03496561078d"
 authors = ["Matthias Sachs <msachs@math.ubc.ca>"]
 version = "0.1.0"
+
 [deps]
 ACE = "3e8ccfd2-c8b0-11ea-32f1-f3a5990fd77a"
 ACEatoms = "1e34e032-0b37-4839-a012-196b35408c3c"
 JuLIP = "945c410c-986d-556a-acb1-167a618e0462"
 NeighbourLists = "2fcf5ba9-9ed4-57cf-b73f-ff513e316b9c"
+Turing = "fce5fe82-541a-59a6-adf8-730c64b5f9a0"
