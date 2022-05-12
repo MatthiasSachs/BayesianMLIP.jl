@@ -45,5 +45,5 @@ B1 = evaluate(model.basis1, cfg)
 
 grad1, grad2 = evaluate_param_d(model, at)
 
-cat(grad1,grad2, dims=1)
+grad = cat(grad1,grad2, dims=1)
 println(typeof(at)) #Atoms{Float64}   
