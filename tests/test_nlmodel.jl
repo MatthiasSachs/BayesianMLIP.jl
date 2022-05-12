@@ -25,7 +25,25 @@ rattle!(at,0.1)
 #Create FM model
 model = FSModel(basis1, basis2, 
                             rcut, 
-                            x -> sqrt(x), 
+                            x -> -sqrt(x), 
+                            x -> 1 / (2 * sqrt(x)), 
                             ones(length(basis1)), ones(length(basis2)))
 #Evaluate model at bulk configuration
 E = ACE.evaluate(model, at)
+
+using BayesianMLIP.NLModels: evaluate_param_d
+
+
+nlist = neighbourlist(at, model.rcut) #a neighb
+lin_part, nonlin_part = 0.0,0.0
+k=1
+_, Rs = NeighbourLists.neigs(nlist, k)
+cfg = [ ACE.State(rr = r)  for r in Rs ] |> ACEConfig
+B1 = evaluate(model.basis1, cfg)
+
+
+
+grad1, grad2 = evaluate_param_d(model, at)
+
+cat(grad1,grad2, dims=1)
+println(typeof(at)) #Atoms{Float64}   

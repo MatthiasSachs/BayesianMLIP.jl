@@ -1,7 +1,7 @@
 
 module NLModels
 
-using ACE
+using ACE 
 using ACE: evaluate
 using ACEatoms
 using JuLIP
@@ -19,8 +19,8 @@ struct FSModel
     c2  # = a'
 end
 
-function ACE.evaluate(m::FSModel, at)
-    nlist = neighbourlist(at, m.rcut) 
+function ACE.evaluate(m::FSModel, at) #at = atoms, at.X = positions of all atoms, at.Z = species, at.P = momenta, at.pbc = perZiodic boundary conditions 
+    nlist = neighbourlist(at, m.rcut) #a neighb
     lin_part, nonlin_part = 0.0,0.0
     for k = 1:length(at)
         _, Rs = NeighbourLists.neigs(nlist, k)
@@ -32,6 +32,9 @@ function ACE.evaluate(m::FSModel, at)
     end
     return lin_part + nonlin_part
 end
+
+
+
 
 # Test BlaBla
 function ACE.evaluate_d(m::FSModel, at)
@@ -45,9 +48,23 @@ function ACE.evaluate_d(m::FSModel, at)
         lin_part += sum( c*b for (c,b) in zip(m.c1,B1)) 
         nnonlin_part += m.transform(sum( c*b for (c,b) in zip(m.c2,B2)).val)
     end
-    return 
+    return B1
 end
 
+function evaluate_param_d(m::FSModel, at)
+    nlist = neighbourlist(at, m.rcut)
+    grad1 = zeros(length(m.basis1))
+    grad2 = zeros(length(m.basis2))
+    for i = 1:length(at)
+        _, Rs = NeighbourLists.neigs(nlist, i)
+        Ri = [ ACE.State(rr = r)  for r in Rs ] |> ACEConfig
+        B1 = ACE.evaluate(m.basis1, Ri) # evaluate basis1 at atomic environement Ri
+        B2 = ACE.evaluate(m.basis2, Ri) # evaluate basis2 at atomic environement Ri
+        grad1 += [ b.val for b in B1]
+        grad2 += [ b.val for b in B2] * m.transform_d(sum( c*b for (c,b) in zip(m.c2,B2)).val)
+    end
+    return grad1, grad2
+end
 
 end
 #%%
