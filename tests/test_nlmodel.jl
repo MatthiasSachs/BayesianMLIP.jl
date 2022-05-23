@@ -36,8 +36,11 @@ x_vals = [point[1] for point in at.X]
 y_vals = [point[2] for point in at.X] 
 z_vals = [point[3] for point in at.X] 
 scatter(x_vals, y_vals, z_vals)     # Quick inspection of initial positions of particles 
-rattle!(at,0.1)                     # Perturbs the system 
-println(at.X[1])
+rattle!(at,0.1)                     # Perturbs the system, changes the input 'at' 
+x_vals = [point[1] for point in at.X]
+y_vals = [point[2] for point in at.X] 
+z_vals = [point[3] for point in at.X] 
+scatter(x_vals, y_vals, z_vals)  
 
 #Create Finnis-Sinclair model, with struct defined in nlmodels.jl
 # Type Hierarchy: Any -> FSModel
@@ -54,15 +57,8 @@ E = ACE.evaluate(model, at)
 using BayesianMLIP.NLModels: evaluate_param_d
 
 
-nlist = neighbourlist(at, model.rcut) #a neighb
-lin_part, nonlin_part = 0.0,0.0
-k=1
-_, Rs = NeighbourLists.neigs(nlist, k)
-cfg = [ ACE.State(rr = r)  for r in Rs ] |> ACEConfig
-B1 = evaluate(model.basis1, cfg)
-
-
-
+# Evaluate the gradients with respect to the linear parameters c1 and c2
 grad1, grad2 = evaluate_param_d(model, at)
-
-grad = cat(grad1,grad2, dims=1)
+println(grad1)
+println(grad2)
+grad = cat(grad1,grad2, dims=1)       # Concatenate the two arrays
