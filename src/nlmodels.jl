@@ -41,20 +41,30 @@ function ACE.evaluate(m::FSModel, at)
     return lin_part + nonlin_part
 end
 
-# Test BlaBla: Implement Gradient w.r.t. position vectors
-function ACE.evaluate_d(m::FSModel, at)
-    nlist = neighbourlist(at, m.rcut)
-    lin_part, nonlin_part = 0.0,0.0
+#Implement Gradient w.r.t. position vectors
+function forces!(F, m::FSModel, at::Atoms; nlist = nothing) 
+    if nlist === nothing
+        nlist = neighbourlist(at, m.rcut)
+    end
     for k = 1:length(at)
         _, Rs = NeighbourLists.neigs(nlist, k)
         cfg = [ ACE.State(rr = r)  for r in Rs ] |> ACEConfig
-        B1 = ACE.evaluate(m.basis1, cfg) 
-        B2 = ACE.evaluate(m.basis2, cfg) 
-        lin_part += sum( c*b for (c,b) in zip(m.c1,B1)) 
-        nonlin_part += m.transform(sum( c*b for (c,b) in zip(m.c2,B2)).val)
+        F[k] += - sum(m.c1 .* ACE.evaluate_d(m.basis1, cfg)) # ACE.evaluate_d = (\nabla_{r_k} B_l)_{l=1}^{N_{basis}}
+        F[k] += - sum(m.c2 .* ACE.evaluate_d(m.basis2, cfg)) * m.transform_d(sum(m.c2.*ACE.evaluate(m.basis2, cfg))) 
     end
-    return B1
 end
+
+function allocate_F(n::Int)
+    return zeros(SVector{Float64,3}, n)
+end
+
+function forces(m::FSModel, at::Atoms; nlist = nothing) 
+    # Compute gradient of the potential w.r.t. position vectors
+    F = allocate_F(length(at))
+    forces!(F, m::FSModel, at::Atoms; nlist=nlist) 
+    return F
+end
+
 
 # Gradient of Finnis-Sinclair w.r.t. parameter c1 (a) and c2 (a') 
 function evaluate_param_d(m::FSModel, at)
@@ -75,4 +85,3 @@ end
 
 end
 #%%
-

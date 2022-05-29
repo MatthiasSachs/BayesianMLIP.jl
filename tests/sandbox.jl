@@ -17,5 +17,3 @@ rcut = 5.0 # Cutoff radius
 B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, rin = 1.2, rcut = 5.0)
 println(typeof(B1p))
 
-
-
