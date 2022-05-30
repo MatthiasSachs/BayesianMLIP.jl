@@ -1,3 +1,6 @@
+using Revise
+Revise.includet("../src/nlmodels.jl")
+
 using ACE
 using ACEatoms
 using BayesianMLIP.NLModels
@@ -14,51 +17,77 @@ rcut = 5.0 # Cutoff radius
 B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, 
                                  rin = 1.2, rcut = 5.0)
 
+# B1p -- B1p.bases --- 
+#     -- B1p.indices : [(1, 1), (1, 2), ... (3, 2), (4, 1), (3, 3), (3, 4)]
+#     -- B1p.B_pool -- B1p.B_pool.arrays -- index
+
 # Create Symmetric bases for fmmodel
 ACE.init1pspec!(B1p, Bsel)
 basis1 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 basis2 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 
 # Create bulk configuration
-at = bulk(:Ti, cubic=true) * 3
-
+at = bulk(:Ti, cubic=true) * 3      
 # Quick Inspection of at object 
 # Type Hierarchy: AbstractVector{StaticArrays.SVector{3, Float64}} 
 #                 -> DenseVector{StaticArrays.SVector{3, Float64}} 
 #                   -> Vector{StaticArrays.SVector{3, Float64}} * 
 # Type Vector with elements of Type StaticArrays.SVector{3, Float64} 
 
-println(fieldnames(typeof(at)))     # (:X, :P, :M, :Z, :cell, :pbc, :calc, :dofmgr, :data)
+# println(fieldnames(typeof(at)))     # (:X, :P, :M, :Z, :cell, :pbc, :calc, :dofmgr, :data)
 #                                      X: Positions, P: Momenta, Z: Species, M: Mass(?), 
 #                                      pbc: periodic boundary conditions
-println(length(at.X))               # 54 points
-x_vals = [point[1] for point in at.X]
-y_vals = [point[2] for point in at.X] 
-z_vals = [point[3] for point in at.X] 
-scatter(x_vals, y_vals, z_vals)     # Quick inspection of initial positions of particles 
+
+
+# Restructure into list of 3 elements: 54-vector of X-values, Y-values, Z-values
+# XYZ_Coords = [ [point[1] for point in at.X], [point[2] for point in at.X], [point[3] for point in at.X] ]
+# scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3])     # Quick inspection of initial positions of particles 
+
 rattle!(at,0.1)                     # Perturbs the system, changes the input 'at' 
-x_vals = [point[1] for point in at.X]
-y_vals = [point[2] for point in at.X] 
-z_vals = [point[3] for point in at.X] 
-scatter(x_vals, y_vals, z_vals)  
+
 
 #Create Finnis-Sinclair model, with struct defined in nlmodels.jl
-# Type Hierarchy: Any -> FSModel
 model = FSModel(basis1, basis2, 
-                            rcut, 
-                            x -> -sqrt(x), 
-                            x -> 1 / (2 * sqrt(x)), 
-                            ones(length(basis1)), ones(length(basis2)))
-println(fieldnames(FSModel))        # (:basis1, :basis2, :rcut, :transform, :transform_d, :c1, :c2)
+                    rcut, 
+                    x -> -sqrt(x), 
+                    x -> 1 / (2 * sqrt(x)), 
+                    ones(length(basis1)), ones(length(basis2)))
 
+using BayesianMLIP.NLModels: eval_Model, eval_param_gradients, forces 
 
 #Evaluate potential energy of model at bulk configuration
-E = ACE.evaluate(model, at)         #TASK: Write code that simulates this system using Langevin dynamics
-using BayesianMLIP.NLModels: evaluate_param_d
+E = eval_Model(model, at)         #TASK: Write code that simulates this system using Langevin dynamics
+
+# Evaluate gradient w.r.t. position vectors of particles 
+F = forces(model, at)
+
+# It is possible to add F to at.P, both of which are of type Vector{StaticArrays.SVector{3, Float64}}
 
 
-# Evaluate the gradients with respect to the linear parameters c1 and c2
-grad1, grad2 = evaluate_param_d(model, at)
+# Implement numerical integrator here: e.g. Velocity Verlet 
+h = 0.1    # step size
+T = 50      # Total time interval 
+time_frame = 0:h:T 
+
+# animation 
+anim = @animate for i in 1:length(time_frame) 
+    global F 
+    at.P = at.P - (h/2)*F
+    at.X = at.X + h * ((1 ./ at.M) .* at.P) 
+    F = forces(model, at)   # Update F with new at.X positions 
+    at.P = at.P - (h/2)*F 
+
+    XYZ_Coords = [ [point[1] for point in at.X], [point[2] for point in at.X], [point[3] for point in at.X] ]
+    scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3])
+
+end 
+
+gif(anim, "anim.mp4", fps=60)
+
+
+
+# Evaluate the gradients w.r.t. linear parameters c1 and c2
+grad1, grad2 = eval_param_gradients(model, at)
 println(grad1)
 println(grad2)
-grad = cat(grad1,grad2, dims=1)       # Concatenate the two arrays
+grad = cat(grad1, grad2, dims=1)       # Concatenate the two arrays
