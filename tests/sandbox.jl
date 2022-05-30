@@ -1,96 +1,91 @@
+using Revise
+Revise.includet("../src/nlmodels.jl")
+Revise.includet("../src/dynamics.jl")
+
 using ACE
 using ACEatoms
 using BayesianMLIP.NLModels
 using Random: seed!, rand
 using JuLIP
-using Plots             # Add Plots pkg for data visualization 
-
-X = ACE.DState(rr = rand(ACE.SVector{3, Float64}), ss =rand(ACE.SVector{3, Float64}))
-Y = ACE.DState(rr = rand(ACE.SVector{3, Float64}), ss =rand(ACE.SVector{3, Float64}))
-println(2X - 4Y)
-
-# Configuration is just a collection of states (in here, 10 particles)
-cfg = ACE.ACEConfig( [State(rr = randn(ACE.SVector{3, Float64})) for _=1:10])
-println(cfg)
-
-# One Particle Basis 
-A = ACE.evaluate(basis1p, cfg)
+using Plots
+using BayesianMLIP.NLModels: eval_Model, eval_param_gradients, forces 
 
 
-maxdeg = 4 # max degree
-ord = 2 # max body order correlation 
+maxdeg = 4
+ord = 2
 Bsel = SimpleSparseBasis(ord, maxdeg)
-rcut = 5.0 # Cutoff radius
+rcut = 5.0 
 
-# Create phi_mnl one particle basis
 B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, 
                                  rin = 1.2, rcut = 5.0)
-
-# B1p -- B1p.bases --- 
-#     -- B1p.indices : [(1, 1), (1, 2), ... (3, 2), (4, 1), (3, 3), (3, 4)]
-#     -- B1p.B_pool -- B1p.B_pool.arrays -- index
-
-
-
-println(B1p.B_pool.arrays)
-println(fieldnames(typeof(B1p.B_pool)))
-
-println(typeof(B1p))
-println(fieldnames(typeof(B1p.bases)))
-println(typeof(B1p.bases[1]))
-
-# Create Symmetric bases for fmmodel
 ACE.init1pspec!(B1p, Bsel)
 basis1 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 basis2 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 
 
-
-# Create bulk configuration
-at = bulk(:Ti, cubic=true) * 3
-println(length(at.data))
-
-# Quick Inspection of at object 
-# Type Hierarchy: AbstractVector{StaticArrays.SVector{3, Float64}} 
-#                 -> DenseVector{StaticArrays.SVector{3, Float64}} 
-#                   -> Vector{StaticArrays.SVector{3, Float64}} * 
-# Type Vector with elements of Type StaticArrays.SVector{3, Float64} 
-
-println(fieldnames(typeof(at)))     # (:X, :P, :M, :Z, :cell, :pbc, :calc, :dofmgr, :data)
-#                                      X: Positions, P: Momenta, Z: Species, M: Mass(?), 
-#                                      pbc: periodic boundary conditions
-println(length(at.X))               # 54 points
-x_vals = [point[1] for point in at.X]
-y_vals = [point[2] for point in at.X] 
-z_vals = [point[3] for point in at.X] 
-scatter(x_vals, y_vals, z_vals)     # Quick inspection of initial positions of particles 
-rattle!(at,0.1)                     # Perturbs the system, changes the input 'at' 
-x_vals = [point[1] for point in at.X]
-y_vals = [point[2] for point in at.X] 
-z_vals = [point[3] for point in at.X] 
-scatter(x_vals, y_vals, z_vals)  
-
-#Create Finnis-Sinclair model, with struct defined in nlmodels.jl
-# Type Hierarchy: Any -> FSModel
+at = bulk(:Ti, cubic=true) * 3      
+rattle!(at,0.1) 
 model = FSModel(basis1, basis2, 
-                            rcut, 
-                            x -> -sqrt(x), 
-                            x -> 1 / (2 * sqrt(x)), 
-                            ones(length(basis1)), ones(length(basis2)))
-println(fieldnames(FSModel))        # (:basis1, :basis2, :rcut, :transform, :transform_d, :c1, :c2)
+                    rcut, 
+                    x -> -sqrt(x), 
+                    x -> 1 / (2 * sqrt(x)), 
+                    ones(length(basis1)), ones(length(basis2)))
+
+E = eval_Model(model, at)
+
+F = forces(model, at)
+grad1, grad2 = eval_param_gradients(model, at)
+
+using JuLIP: AbstractAtoms
+
+# Consturct Hierarchy of Abstract Types for Organization
+abstract type Dynamics end
+abstract type HamiltonianDynamics <: Dynamics end
 
 
-#Evaluate potential energy of model at bulk configuration
-E = ACE.evaluate(model, at)         #TASK: Write code that simulates this system using Langevin dynamics
-using BayesianMLIP.NLModels: evaluate_param_d
+mutable struct VelocityVerlet{T} <: HamiltonianDynamics where {T}
+    at::AbstractAtoms
+    F::Vector{JVec{T}} # force
+    h::Float64      # step size
+ end
+
+mutable struct PositionVerlet{T} <: HamiltonianDynamics where {T}
+    at::AbstractAtoms
+    F::Vector{JVec{T}} # force
+    h::Float64      # step size
+ end
+
+B_step!(d::HamiltonianDynamics, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_momenta!(at, at.P + hf * d.h * d.F)
+A_step!(d::HamiltonianDynamics, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_positions!(at,at.X + hf * d.h * at.P./at.M)
 
 
-# Evaluate the gradients with respect to the linear parameters c1 and c2
-grad1, grad2 = evaluate_param_d(model, at)
-println(grad1)
-println(grad2)
-grad = cat(grad1,grad2, dims=1)       # Concatenate the two arrays
+# Multiple Dispatch of step! function dependeing on whether s is VelVer or PosVer 
+function step!(s::VelocityVerlet, V, at::AbstractAtoms ) #V::SitePotential
+    B_step!(s, at; hf=.5)
+    A_step!(s, at; hf=1.0)
+    s.F = forces(V, at)
+    B_step!(s, at; hf=.5)
+    return s 
+end
+
+function step!(s::PositionVerlet, V, at::AbstractAtoms ) #V::SitePotential
+    A_step!(s, at; hf=.5)
+    s.F = forces(V, at)
+    B_step!(s, at; hf=1.0)
+    A_step!(s, at; hf=.5)
+    return s
+end
 
 
-vec = [1, 2, 3, 4] 
-println(1/vec)
+function run!(d::Dynamics, V, N::Int)
+    for _ in 1:N
+        step!(d, V, d.at)
+    end
+end
+
+obj = VelocityVerlet(at, F, 0.1)
+println(obj.at.X)
+# step!(obj, model, at)
+
+run!(obj, model, 10) 
+println(obj.at.X)

@@ -11,7 +11,7 @@ function run!(d::Dynamics, N::Int)
         step!(d::Dynamics, V, d.at; hf::T=1.0)
     end
 end
-#run(d::dynamics,at::AbstractAtoms, Nsteps::i)
+# run(d::dynamics,at::AbstractAtoms, Nsteps::i)
 abstract type GradientDynamics <: Dynamics end
 
 abstract type OLDDynamics <: GradientDynamics end
@@ -22,7 +22,7 @@ mutable struct EulerMaruyama{T} <: OLDDynamics where {T<:Real}
     β::T    # step size
  end
 
-function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=1.0)
+function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=1.0) where {T}
     set_positions!(at, at.X + hf * d.h * forces(V, at)./at.M + sqrt.( hf/d.β * d.h/at.M).*randn(SVector{3,Float64},length(at)))
 end
 
