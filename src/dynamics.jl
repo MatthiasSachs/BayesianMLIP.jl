@@ -21,7 +21,7 @@ mutable struct EulerMaruyama{T} <: OLDDynamics where {T<:Real}
     at::AbstractAtoms
     h::T 
     β::T    # step size
- end
+end
 
 function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=1.0) where {T}
     set_positions!(at, at.X + hf * d.h * forces(V, at)./at.M + sqrt.( hf/d.β * d.h/at.M).*randn(SVector{3,Float64},length(at)))
@@ -37,7 +37,7 @@ mutable struct VelocityVerlet{T} <: HamiltonianDynamics where {T}
     at::AbstractAtoms
     F::Vector{JVec{T}} # force
     h::Float64      # step size
- end
+end
 
 function step!(s::VelocityVerlet, V, at::AbstractAtoms ) #V::SitePotential
     B_step!(s, at; hf=.5)
@@ -68,7 +68,7 @@ get_invtemp(d::Thermostat) = d.β
 
 abstract type Langevin <: Thermostat end 
 
-O_step!(s::Langevin, at::AbstractAtoms) where {T<:Real} = set_momenta!(at, s.α .* at.P + s.ζ * randn(SVector{3,Float64},length(at)) )
+O_step!(s::Langevin, at::AbstractAtoms) = set_momenta!(at, s.α .* at.P + s.ζ * randn(SVector{3,Float64},length(at)) )
 
 mutable struct BAOAB{T}  <: Langevin where {T<:Real}
     h::T
@@ -88,6 +88,7 @@ function step!(s::BAOAB, V, at::AbstractAtoms )
     s.forces = forces(V, at)
     B_step!(s, at; hf=.5)
 end
+
 
 at.pbc = (false,false, false)
 sum(sum(at.X[t] .* force[t])/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 

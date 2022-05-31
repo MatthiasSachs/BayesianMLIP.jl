@@ -136,7 +136,7 @@ function step!(d::EulerMaruyama, V, at::AbstractAtoms) where {T}
     return d 
 end
 
-EMObj = EulerMaruyama(at, 0.05, 1.0)
+EMObj = EulerMaruyama(at, 0.05, 1.0) 
 step!(EMObj, model, at)
 animate!(EMObj, model, 200)
 
@@ -151,30 +151,35 @@ get_invtemp(d::Thermostat) = d.β
 
 abstract type Langevin <: Thermostat end 
 
-O_step!(s::Langevin, at::AbstractAtoms) = set_momenta!(at, s.α .* at.P + s.ζ * randn(SVector{3,Float64},length(at)) )
+O_step!(s::Langevin, at::AbstractAtoms) = set_momenta!(at, s.α .* at.P + s.ζ * randn(ACE.SVector{3,Float64},length(at)) )
 
-mutable struct BAOAB{T} <: Langevin where {T<:Real}
+mutable struct BAOAB{T} <: Langevin where {T<:Real} 
+    at::AbstractAtoms  
     h::T        # Step size 
-    forces::Vector{ACE.SVector{3,T}}
+    F::Vector{ACE.SVector{3,T}}
     β::T        # Inverse Temperature 
     α::T        # Integrator parameters
     ζ::T        # Integrator parameters 
 end
 
-BAOAB(h::T, N::Int; γ::T=1.0, β::T=1.0) where {T<:Real} = BOAOB(h, zeros(ACE.SVector{3,T},N), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))  
-
-BAOAB(1.0, 4)
+# BAOAB(h::T, N::Int; γ::T=1.0, β::T=1.0) where {T<:Real} = BOAOB(h, zeros(ACE.SVector{3,T},N), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))  
 
 function step!(s::BAOAB, V, at::AbstractAtoms)
     B_step!(s, at; hf=.5)
     A_step!(s, at; hf=.5)
     O_step!(s, at)
     A_step!(s, at; hf=.5)
-    s.forces = forces(V, at)
+    s.F = forces(V, at)
     B_step!(s, at; hf=.5)
 end
 
-BAObj = BAOAB(0.1, F, 1.0, 1.0, 1.0)
-get_invtemp(BAObj)
+BAObj = BAOAB(at, 0.1, F, 1.0, 1.0, 1.0)
+println(at.X[1]) 
+step!(BAObj, model, BAObj.at)
+println(at.X[1])
+step!(BAObj, model, BAObj.at)
+println(at.X[1])
+step!(BAObj, model, BAObj.at)
+println(at.X[1])
 
-step!(BAObj, model, at)
+animate!(BAObj, model, 100)
