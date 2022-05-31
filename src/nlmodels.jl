@@ -29,13 +29,13 @@ function eval_Model(m::FSModel, at)
     for i = 1:length(at)       # i index in the summation, indexing over number of particles 
         _, Rs = NeighbourLists.neigs(nlist, i)
         cfg = ACEConfig( [ ACE.State(rr = r) for r in Rs ] )
-        print(cfg)
 
         # Inputs particle data r_{ij} & evaluates values of B_k ({r_{ij}}), B'_k ({r_{ij}}) for all K, K' basis functions
         B1 = ACE.evaluate(m.basis1, cfg) # For each i, B1 is a K-vector with elements B_1 ({r_{ij}}) ... B_K ({r_{ij}})
         B2 = ACE.evaluate(m.basis2, cfg) # For each i, B1 is a K-vector with elements B_1 ({r_{ij}}) ... B_K' ({r_{ij}})
 
         lin_part += sum( c*b for (c,b) in zip(m.c1,B1))                         # Sum up a_k B_k ({r_{ij}}) over index k=1 to K
+        # println("Nonlinear Sum: ", sum( c*b for (c,b) in zip(m.c2,B2)).val)
         nonlin_part += m.transform(sum( c*b for (c,b) in zip(m.c2,B2)).val)     # Sum up a'_k B'_k ({r_{ij}}) over k=1 to K'& transform with F
     end
     

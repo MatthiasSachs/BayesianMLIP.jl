@@ -1,3 +1,4 @@
+
 using ACE
 
 using JuLIP: AbstractAtoms
@@ -71,13 +72,13 @@ O_step!(s::Langevin, at::AbstractAtoms) where {T<:Real} = set_momenta!(at, s.α 
 
 mutable struct BAOAB{T}  <: Langevin where {T<:Real}
     h::T
-    forces::Vector{SVector{3,T}}
+    forces::Vector{ACE.SVector{3,T}}
     β::T
     α::T
     ζ::T
 end
 
-BAOAB(h::T, N::Int; γ::T=1.0, β::T=1.0) where {T<:Real} = BOAOB(h, zeros(SVector{3,T},N), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ)))) 
+BAOAB(h::T, N::Int; γ::T=1.0, β::T=1.0) where {T<:Real} = BOAOB(h, zeros(SVector{3,T},N), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))  
 
 function step!(s::BAOAB, V, at::AbstractAtoms )
     B_step!(s, at; hf=.5)
@@ -87,6 +88,8 @@ function step!(s::BAOAB, V, at::AbstractAtoms )
     s.forces = forces(V, at)
     B_step!(s, at; hf=.5)
 end
+
 at.pbc = (false,false, false)
 sum(sum(at.X[t] .* force[t])/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
 # As step size tends to 0, the difference between the two above should tend to 0
+
