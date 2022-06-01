@@ -91,6 +91,8 @@ end
 
 
 at.pbc = (false,false, false)
-sum(sum(at.X[t] .* force[t])/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
+sum(sum(-f .* x for (f, x) in zip(F[t], at.X[t]))/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
+
+sum(sum(at.X[t] .* F[t])/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
 # As step size tends to 0, the difference between the two above should tend to 0
 

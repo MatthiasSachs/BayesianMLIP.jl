@@ -61,31 +61,6 @@ E = eval_Model(model, at)         #TASK: Write code that simulates this system u
 # Evaluate gradient w.r.t. position vectors of particles 
 F = forces(model, at)
 
-# It is possible to add F to at.P, both of which are of type Vector{StaticArrays.SVector{3, Float64}}
-
-
-# Implement numerical integrator here: e.g. Velocity Verlet 
-h = 0.1    # step size
-T = 50      # Total time interval 
-time_frame = 0:h:T 
-
-# animation 
-anim = @animate for i in 1:length(time_frame) 
-    global F 
-    at.P = at.P - (h/2)*F
-    at.X = at.X + h * ((1 ./ at.M) .* at.P) 
-    F = forces(model, at)   # Update F with new at.X positions 
-    at.P = at.P - (h/2)*F 
-
-    XYZ_Coords = [ [point[1] for point in at.X], [point[2] for point in at.X], [point[3] for point in at.X] ]
-    scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3])
-
-end 
-
-gif(anim, "anim.mp4", fps=60)
-
-
-
 # Evaluate the gradients w.r.t. linear parameters c1 and c2
 grad1, grad2 = eval_param_gradients(model, at)
 println(grad1)
