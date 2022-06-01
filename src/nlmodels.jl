@@ -63,7 +63,7 @@ function allocate_F(n::Int)
     return zeros(ACE.SVector{3, Float64}, n)
 end
 
-function forces(m::FSModel, at::Atoms; nlist = nothing) 
+function eval_forces(m::FSModel, at::Atoms; nlist = nothing) 
     # Compute gradient of Finnis-Sinclair potential w.r.t. position vectors
 
     F = allocate_F(length(at))
