@@ -1,7 +1,7 @@
 module BayesianMLIP
 
 
-   include("./nlmodels.jl")
-  # include("./dynamics.jl")
+  include("./nlmodels.jl")
+  include("./dynamics.jl")
    
 end

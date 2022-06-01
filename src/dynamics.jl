@@ -3,13 +3,13 @@ using ACE
 
 using JuLIP: AbstractAtoms
 abstract type Dynamics end
-
+export run!
 """
 type "dynamics" must implement traverse!(at::AbstractAtoms; kwargs)
 """
-function run!(d::Dynamics, N::Int)
+function run!(d::Dynamics, V, at::AbstractAtoms, N::Int)
     for t = 1:N
-        step!(d::Dynamics, V, d.at; hf::T=1.0)
+        step!(d::Dynamics, V, at)
     end
 end
 # run(d::dynamics,at::AbstractAtoms, Nsteps::i)
