@@ -61,7 +61,7 @@ for k = 1:N_obs
     push!(data,(at=deepcopy(at),E = energy(fsmodel,at), F = forces(fsmodel,at) ))
 end
 
-# 1) Check that Hamiltonian dynamics preservers total energy of mores model
+# 1) Check that Hamiltonian dynamics preservers total energy of mores model. Confirmed
 # 2) check that combined model works... 
 # 3) generate data using the combined model
 

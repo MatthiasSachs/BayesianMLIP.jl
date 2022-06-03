@@ -1,13 +1,13 @@
-
 module NLModels
 
 using ACE 
-using ACE: evaluate   # Need this? Why not create new evaluate function rather than override? 
 using ACEatoms
 using JuLIP
+import JuLIP: forces, energy
 using NeighbourLists
+using Random: seed!
 
-export FSModel
+export FSModel, energy, forces, FS_paramGrad
 
 struct FSModel      # <: Any
     basis1 # = B 
@@ -19,7 +19,7 @@ struct FSModel      # <: Any
     c2  # = vector a', with length K'
 end
 
-function eval_Model(m::FSModel, at)
+function energy(m::FSModel, at; nlist = nothing)
     # Function representing our approximation model \hat{E} of our true Finnis-Sinclair potential E
 
     # neighbourlist computes all the relevant particles within the rcut radius for each particle. 
@@ -56,22 +56,11 @@ function forces!(F, m::FSModel, at::Atoms; nlist = nothing)
     return F 
 end
 
-function energy(m::FSModel, at::Atoms; nlist = nothing) 
-    return eval_Model(m, at)
-end
 function allocate_F(n::Int)
     return zeros(ACE.SVector{3, Float64}, n)
 end
 
-function eval_forces(m::FSModel, at::Atoms; nlist = nothing) 
-    # Compute gradient of Finnis-Sinclair potential w.r.t. position vectors
-
-    F = allocate_F(length(at))
-    forces!(F, m::FSModel, at::Atoms; nlist=nlist) 
-    return F  # Vector{StaticArrays.SVector{3, Float64}}
-end
-
-function eval_param_gradients(m::FSModel, at)
+function FS_paramGrad(m::FSModel, at)
     # Compute gradient of Finnis-Sinclair potential w.r.t. parameters  c1 (a) and c2 (a') 
 
     nlist = neighbourlist(at, m.rcut)
@@ -88,5 +77,12 @@ function eval_param_gradients(m::FSModel, at)
     return grad1, grad2
 end
 
+function forces(m::FSModel, at::Atoms; nlist = nothing) 
+    # Compute gradient of Finnis-Sinclair potential w.r.t. position vectors
+
+    F = allocate_F(length(at))
+    forces!(F, m::FSModel, at::Atoms; nlist=nlist) 
+    return F  # Vector{StaticArrays.SVector{3, Float64}}
+end
 
 end

@@ -1,67 +1,57 @@
+module Dynamics 
 
-module Dynamics
 
 using ACE
-
 using JuLIP: AbstractAtoms
-using JuLIP: JVec
-
+using JuLIP
 using StaticArrays
+using Plots
+using Random: seed!, rand
+using LinearAlgebra: dot
 
-export run!
+include("outputschedulers.jl")
+using .Outputschedulers
+include("nlmodels.jl")
+using .NLModels
+
+export run!, step!
+export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB
+
+# Consturct Hierarchy of Abstract Types for Organization
+# Integrator --- HamiltonianIntegrator ------------------ VelocityVerlet(at, F, h)
+#                                  ------------------ PositionVerlet(at, F, h)
+#                                  ------------------ Thermostat ---------------- Langevin ----- BAOAB 
+#          --- GradientIntegrator ----- OLDIntegrator --- EulerMaruyama(at, h, β)
+
+abstract type Integrator end
+abstract type HamiltonianIntegrator <: Integrator end 
+abstract type GradientIntegrator <: Integrator end
+abstract type OLDIntegrator <: GradientIntegrator end
+abstract type Thermostat <: HamiltonianIntegrator end
+abstract type Langevin <: Thermostat end 
 
 
-abstract type Dynamics end
-"""
-type "Dynamics" must implement step!(at::AbstractAtoms; kwargs)
-"""
-abstract type HamiltonianDynamics <: Dynamics end
+# Ordinary Hamiltonian Integrators & Step Functions
 
-mutable struct VelocityVerlet{T} <: HamiltonianDynamics where {T}
-    F::Vector{JVec{T}} # force
+mutable struct VelocityVerlet{T} <: HamiltonianIntegrator where {T}
+    F::Vector{ACE.SVector{3,T}} # force
     h::Float64      # step size
 end
-
 VelocityVerlet(h::Float64, V, at::AbstractAtoms) = VelocityVerlet(forces(V, at), h)
 
-mutable struct PositionVerlet{T} <: HamiltonianDynamics where {T}
-    F::Vector{JVec{T}} # force
+mutable struct PositionVerlet{T} <: HamiltonianIntegrator where {T}
+    F::Vector{ACE.SVector{3,T}} # force
     h::Float64      # step size
 end
-
 PositionVerlet(h::Float64, V, at::AbstractAtoms) = PositionVerlet(forces(V, at) , h) 
 
-B_step!(d::HamiltonianDynamics, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_momenta!(at, at.P + hf * d.h * d.F)
-A_step!(d::HamiltonianDynamics, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_positions!(at, at.X + hf * d.h * at.P./at.M)
-
-
-
-# outp = simpleoutp()
-# run!(d::Dynamics, V, at::AbstractAtoms, Nsteps::Int; outputscheduler = outp)
-# outp.x_traj
-
-function run!(d::Dynamics, V, at::AbstractAtoms, Nsteps::Int; outputscheduler = outp)
-    for t = 1:Nsteps
-        step!(d::Dynamics, V, at)
-        feed!(d,V, at, outp)
-    end
+mutable struct EulerMaruyama{T} <: OLDIntegrator where {T<:Real}
+    h::T 
+    β::T    # step size
 end
 
-abstract type outputscheduler end
-
-begin struct simpleoutp
-    x_traj
-end
-simpleoutp() = simpleoutp([])
-function feed!(d,V, at, outp::simpleoutp)
-    push!(outp.x_traj,at.X)
-end
-
-function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=1.0) where {T}
-    set_positions!(at, at.X + hf * d.h * forces(V, at)./at.M + sqrt.( hf/d.β * d.h/at.M).*randn(SVector{3,Float64},length(at)))
-end
-
-
+B_step!(d::HamiltonianIntegrator, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_momenta!(at, at.P + hf * d.h * d.F)
+A_step!(d::HamiltonianIntegrator, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_positions!(at, at.X + hf * d.h * at.P./at.M)
 
 function step!(s::VelocityVerlet, V, at::AbstractAtoms ) #V::SitePotential (e.g. FSModel)
     B_step!(s, at; hf=.5)
@@ -77,26 +67,14 @@ function step!(s::PositionVerlet, V, at::AbstractAtoms ) #V::SitePotential
     A_step!(s, at; hf=.5)
 end
 
-abstract type GradientDynamics <: Dynamics end
-
-abstract type OLDDynamics <: GradientDynamics end
-
-mutable struct EulerMaruyama{T} <: OLDDynamics where {T<:Real}
-    h::T 
-    β::T    # step size
- end
-
-function step!(d::EulerMaruyama, V, at::AbstractAtoms) where {T}
-    set_positions!(at, at.X + 1.0 * d.h * forces(V, at)./at.M + sqrt.( 1.0/d.β * d.h./at.M).*randn(ACE.SVector{3,Float64},length(at)))
+function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=1.0) where {T}
+    set_positions!(at, at.X + hf * d.h * forces(V, at)./at.M + sqrt.( hf/d.β * d.h/at.M).*randn(SVector{3,Float64},length(at)))
 end
 
-abstract type Thermostat <: HamiltonianDynamics end
+
+# Langevin Integrators 
 
 get_invtemp(d::Thermostat) = d.β
-
-abstract type Langevin <: Thermostat end 
-
-O_step!(s::Langevin, at::AbstractAtoms) = set_momenta!(at, s.α .* at.P + s.ζ * randn(ACE.SVector{3,Float64},length(at)) )
 
 mutable struct BAOAB{T} <: Langevin where {T<:Real}  
     h::T        # Step size 
@@ -104,11 +82,10 @@ mutable struct BAOAB{T} <: Langevin where {T<:Real}
     β::T        # Inverse Temperature 
     α::T        # Integrator parameters
     ζ::T        # Integrator parameters 
-
 end
-
-# Constructor for BAOAB struct 
 BAOAB(h::T, V, at::AbstractAtoms ; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB(h, forces(V, at), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))
+
+O_step!(s::Langevin, at::AbstractAtoms) = set_momenta!(at, s.α .* at.P + s.ζ * randn(ACE.SVector{3,Float64},length(at)) )
 
 function step!(s::BAOAB, V, at::AbstractAtoms)
     B_step!(s, at; hf=.5)
@@ -119,10 +96,108 @@ function step!(s::BAOAB, V, at::AbstractAtoms)
     B_step!(s, at; hf=.5)
 end
 
+# Function that implements integrators over time interval. 
+function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp::simpleoutp)
+    for _ in 1:Nsteps
+        step!(d::Integrator, V, at)
+        push!(outp.X_traj, copy(at.X))
+        push!(outp.P_traj, copy(at.P))
+        println(Hamiltonian(V, at))
+    end
+end
+
+# animation 
+
+function animate!(outp::simpleoutp ; name::String="anim", trace=false)
+    anim = @animate for t in 1:length(outp.X_traj)
+        frame = outp.X_traj[t]  # a no_of_particles-vector with each element 
+        XYZ_Coords = [ [point[1] for point in frame], [point[2] for point in frame], [point[3] for point in frame] ]
+
+        if trace == true 
+            scatter!(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
+                    markercolor="black", legend=false)
+        else 
+            scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
+                    markercolor="black", legend=false)
+        end 
+    end
+    gif(anim, "$(name).mp4", fps=50)
+end
+
+function Hamiltonian(V, at::Atoms) 
+    # Wish we would directly call this on outp, but this would require outp to store 
+    # entire at object rather than at.X and at.P
+    PE = energy(V, at)
+    KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
+    return PE + KE 
+end 
+
+
+function mainFinnisSinclairSimulation() 
+    maxdeg = 4
+    ord = 2
+    Bsel = SimpleSparseBasis(ord, maxdeg)
+    rcut = 5.0 
+    
+    B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, 
+                                        rin = 1.2, rcut = 5.0)
+    ACE.init1pspec!(B1p, Bsel)
+    basis1 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
+    basis2 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
+    
+    
+    at = bulk(:Ti, cubic=true) * 3
+    
+    rattle!(at,0.1) 
+    model = FSModel(basis1, basis2, 
+                        rcut, 
+                        x -> -sqrt(x), 
+                        x -> 1 / (2 * sqrt(x)), 
+                        ones(length(basis1)), ones(length(basis2)))
+    
+    # E = energy(model, at)   
+    F = forces(model, at)
+    # grad1, grad2 = FS_paramGrad(model, at)
+    
+    VVIntegrator = VelocityVerlet(F, 0.05)
+    outp = simpleoutp()
+    run!(VVIntegrator, model, at, 260; outp = outp)
+    # for step in 1:250 
+    #     println(": ", outp.X_traj[step][1])
+    # end 
+    
+    animate!(outp, name="FS_Animation")
+end 
+
+function mainMorseSimulation() 
+    @info("Define (Morse) pair-potential")
+    r0 = rnn(:Al)
+    Vpair = JuLIP.morse(;A=4.0, e0=.5, r0=r0, rcut=(1.9*r0, 2.7*r0))
+    
+    @info("Create random Al configuration")
+    seed!(1234)
+    at = bulk(:Al, cubic=true) * 3
+    at = rattle!(at, 0.1)
+    
+    F = forces(Vpair, at)
+    # E = energy(Vpair, at)
+    
+    VVIntegrator = VelocityVerlet(F, 0.1)
+    outp = simpleoutp()
+    Nsteps = 500
+    run!(VVIntegrator, Vpair, at, Nsteps; outp = outp)
+    animate!(outp, name="Morse_Animation", trace=true)
+end 
+
+mainMorseSimulation()
+
+mainFinnisSinclairSimulation()
+
 #at.pbc = (false,false, false)
 #sum(sum(-f .* x for (f, x) in zip(F[t], at.X[t]))/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
 
 #sum(sum(at.X[t] .* F[t])/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
 # As step size tends to 0, the difference between the two above should tend to 0
 
-end
+
+end  # end module 
