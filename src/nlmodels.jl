@@ -19,7 +19,7 @@ struct FSModel      # <: Any
     c2  # = vector a', with length K'
 end
 
-function energy(m::FSModel, at; nlist = nothing)
+function energy(m::FSModel, at::Atoms; nlist = nothing)
     # Function representing our approximation model \hat{E} of our true Finnis-Sinclair potential E
 
     # neighbourlist computes all the relevant particles within the rcut radius for each particle. 

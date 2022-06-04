@@ -14,7 +14,7 @@ using .Outputschedulers
 include("nlmodels.jl")
 using .NLModels
 
-export run!, step!
+export run!, step!, animate!
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB
 
 # Consturct Hierarchy of Abstract Types for Organization
@@ -97,18 +97,27 @@ function step!(s::BAOAB, V, at::AbstractAtoms)
 end
 
 # Function that implements integrators over time interval. 
-function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp::simpleoutp)
-    for _ in 1:Nsteps
-        step!(d::Integrator, V, at)
-        push!(outp.X_traj, copy(at.X))
-        push!(outp.P_traj, copy(at.P))
-        println(Hamiltonian(V, at))
-    end
+# Pushes information on at.X and at.P
+function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp = nothing)
+    if outp === nothing 
+        for _ in 1:Nsteps 
+            step!(d::Integrator, V, at)
+            # println(Hamiltonian(V, at))
+        end 
+    else 
+        for _ in 1:Nsteps 
+            step!(d::Integrator, V, at)
+            push!(outp.X_traj, copy(at.X))
+            push!(outp.P_traj, copy(at.P))
+            println(Hamiltonian(V, at))
+        end
+    end 
 end
+
 
 # animation 
 
-function animate!(outp::simpleoutp ; name::String="anim", trace=false)
+function animate!(outp ; name::String="anim", trace=false)
     anim = @animate for t in 1:length(outp.X_traj)
         frame = outp.X_traj[t]  # a no_of_particles-vector with each element 
         XYZ_Coords = [ [point[1] for point in frame], [point[2] for point in frame], [point[3] for point in frame] ]
@@ -179,19 +188,17 @@ function mainMorseSimulation()
     at = bulk(:Al, cubic=true) * 3
     at = rattle!(at, 0.1)
     
-    F = forces(Vpair, at)
+    # F = forces(Vpair, at)
     # E = energy(Vpair, at)
     
-    VVIntegrator = VelocityVerlet(F, 0.1)
+    VVIntegrator = VelocityVerlet(0.1, Vpair, at)
+    PVIntegrator = PositionVerlet(0.1, Vpair, at)
+    BAOIntegrator = BAOAB(0.1, Vpair, at)
     outp = simpleoutp()
     Nsteps = 500
-    run!(VVIntegrator, Vpair, at, Nsteps; outp = outp)
-    animate!(outp, name="Morse_Animation", trace=true)
+    run!(BAOIntegrator, Vpair, at, Nsteps; outp = outp)
+    animate!(outp, name="Morse_Animation")
 end 
-
-mainMorseSimulation()
-
-mainFinnisSinclairSimulation()
 
 #at.pbc = (false,false, false)
 #sum(sum(-f .* x for (f, x) in zip(F[t], at.X[t]))/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 
