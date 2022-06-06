@@ -9,10 +9,8 @@ using Plots
 using Random: seed!, rand
 using LinearAlgebra: dot
 
-include("outputschedulers.jl")
-using .Outputschedulers
-include("nlmodels.jl")
-using .NLModels
+using BayesianMLIP.Outputschedulers
+using BayesianMLIP.NLModels
 
 export run!, step!, animate!
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB
@@ -98,18 +96,20 @@ end
 
 # Function that implements integrators over time interval. 
 # Pushes information on at.X and at.P
-function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp = nothing)
+function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp = nothing, config_temp = [])
     if outp === nothing 
         for _ in 1:Nsteps 
             step!(d::Integrator, V, at)
             # println(Hamiltonian(V, at))
+            push!(config_temp, config_temperature(d.F, at.X))
         end 
     else 
         for _ in 1:Nsteps 
             step!(d::Integrator, V, at)
             push!(outp.X_traj, copy(at.X))
             push!(outp.P_traj, copy(at.P))
-            println(Hamiltonian(V, at))
+            # println(Hamiltonian(V, at))
+            push!(config_temp, config_temperature(d.F, at.X))
         end
     end 
 end
@@ -168,13 +168,11 @@ function mainFinnisSinclairSimulation()
     F = forces(model, at)
     # grad1, grad2 = FS_paramGrad(model, at)
     
-    VVIntegrator = VelocityVerlet(F, 0.05)
+    VVIntegrator = VelocityVerlet(0.1, Vpair, at)
+    PVIntegrator = PositionVerlet(0.1, Vpair, at)
+    BAOIntegrator = BAOAB(0.1, Vpair, at)
     outp = simpleoutp()
     run!(VVIntegrator, model, at, 260; outp = outp)
-    # for step in 1:250 
-    #     println(": ", outp.X_traj[step][1])
-    # end 
-    
     animate!(outp, name="FS_Animation")
 end 
 
@@ -193,12 +191,21 @@ function mainMorseSimulation()
     
     VVIntegrator = VelocityVerlet(0.1, Vpair, at)
     PVIntegrator = PositionVerlet(0.1, Vpair, at)
-    BAOIntegrator = BAOAB(0.1, Vpair, at)
+    BAOIntegrator = BAOAB(0.1, Vpair, at; β=10.0)
+    config_temp = []
     outp = simpleoutp()
-    Nsteps = 500
-    run!(BAOIntegrator, Vpair, at, Nsteps; outp = outp)
-    animate!(outp, name="Morse_Animation")
+    Nsteps = 1000
+    run!(BAOIntegrator, Vpair, at, Nsteps; outp = outp, config_temp=config_temp)
+    println(config_temp)
+    println((1/Nsteps) * sum(config_temp))
+    # animate!(outp, name="Morse_Animation")
 end 
+
+function config_temperature(F, X) 
+    (1/(3 * length(F))) * sum([dot(-f, x) for (f, x) in zip(F, X)])
+end
+
+mainMorseSimulation()
 
 #at.pbc = (false,false, false)
 #sum(sum(-f .* x for (f, x) in zip(F[t], at.X[t]))/(3*N), t=1:Nsteps)/Nsteps ≈ 1/β        # Configurational temperature 

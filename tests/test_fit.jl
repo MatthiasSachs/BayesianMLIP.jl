@@ -93,7 +93,7 @@ println(data[5].E)
 
 # 1) Check that Hamiltonian dynamics preservers total energy of mores model. Confirmed
 # 2) check that combined model works...     Unfortunately is still not stable
-# 3) generate data using the combined model. :: Done, stored in outp, also can see in the animation
+# 3) generate data using the combined model. :: Done, also can see in the animation
 
 
 
