@@ -1,5 +1,6 @@
 module BayesianMLIP 
-    include("./outputschedulers.jl")
-    include("./dynamics.jl")
     include("./nlmodels.jl")
+    include("./dynamics.jl")
+    include("./outputschedulers.jl")
+
 end
