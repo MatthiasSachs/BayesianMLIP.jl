@@ -5,9 +5,7 @@ using Random
 
 # using PyPlot 
 
-struct CombModel <: AbstractCalculator
-    model_list
-end
+
 
 include("../src/nlmodels.jl")
 using .NLModels
@@ -18,13 +16,7 @@ include("../src/outputschedulers.jl")
 using .Outputschedulers 
 import .Outputschedulers: simpleoutp
 
-function forces(model::CombModel, at::Atoms)
-    return sum(forces(m,at) for m in model.model_list)
-end
 
-function energy(model::CombModel, at::Atoms)
-    return sum(energy(m,at) for m in model.model_list)
-end
 
 
 

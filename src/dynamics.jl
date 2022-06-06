@@ -9,10 +9,10 @@ using Plots
 using Random: seed!, rand
 using LinearAlgebra: dot
 
-#using BayesianMLIP.Outputschedulers
+# using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
 
-export run!, step!, animate!
+export run!, step!
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB
 
 # Consturct Hierarchy of Abstract Types for Organization
@@ -94,6 +94,8 @@ function step!(s::BAOAB, V, at::AbstractAtoms)
     B_step!(s, at; hf=.5)
 end
 
+
+
 # Function that implements integrators over time interval. 
 # Pushes information on at.X and at.P
 function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp = nothing, config_temp = [])
@@ -113,9 +115,6 @@ function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp = nothing, 
         end
     end 
 end
-
-
-
 
 
 

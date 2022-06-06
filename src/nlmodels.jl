@@ -85,4 +85,16 @@ function forces(m::FSModel, at::Atoms; nlist = nothing)
     return F  # Vector{StaticArrays.SVector{3, Float64}}
 end
 
+struct CombModel <: AbstractCalculator
+    model_list
+end
+
+function forces(model::CombModel, at::Atoms)
+    return sum(forces(m,at) for m in model.model_list)
+end
+
+function energy(model::CombModel, at::Atoms)
+    return sum(energy(m,at) for m in model.model_list)
+end
+
 end
