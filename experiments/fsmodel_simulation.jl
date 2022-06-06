@@ -37,19 +37,27 @@ for k in 1:N_obs
 end
 
 struct GaussianNoiseLL
-    model
-    variance
+    model # has parameters "params"
+    weight      # energy variance vs force variance weight ratio (should be of order 1/(3 N_atoms)) 
     data
 end
 
-function logLikelihood(sm::GaussianNoiseLL, c1, c2 )
+function logLikelihood(sm::GaussianNoiseLL, params )
+    # - sum_{i=1}^{N_obs} \Big( || E_i - energy(model,at_i)||^2 + weight || F_i - forces(model,at_i)||^2 \Big) 
+end
+
+function logLikelihood_d(sm::GaussianNoiseLL, params)
 
 end
-function logLikelihood_d(sm::GaussianNoiseLL, c1, c2)
 
-end
+
+
 # 1) Check that force works properly for linear version of fsmodel  
 # 2) Check regularized non-linear version ( + 0.1, sigmoid?, arctan?)
 # 3) Create synthetic data from a linear model with order = 3 or higher
 # 4) Use non-linear FSmodel with order = 2 to learn same potential       
-# 5) 
+# 5) E_i  = energy(model,at_i) + \epsilon_i (1-dimensional), F_i = force(model,at_i) + \epsilon'_i (3N-dimensional), i = 1, ... N_obs
+# 6) Use BAOAB on the logLikelihood function as the potential, with \beta very large, or \beta = log(t) "cooling schedule"
+#    If beta is very large (i.e. cool temperature), then the integrator should converge to a minimum. When the temperature is cool, the Gibbs measure should be more concentrated, and running BAOAB will allow it to converge to global minima. 
+# 7) Can also implement gradient descent if possible 
+
