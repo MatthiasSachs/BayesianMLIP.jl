@@ -1,11 +1,11 @@
 module Utils
 using Plots 
 using BayesianMLIP.Outputschedulers
+using BayesianMLIP.NLModels
 
 export animate
 
 # animation 
-
 function animate(outp::simpleoutp ; name::String="anim", trace=false)
     anim = @animate for t in 1:length(outp.X_traj)
         frame = outp.X_traj[t]  # a no_of_particles-vector with each element 

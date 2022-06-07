@@ -1,6 +1,6 @@
-module Outputschedulers 
-
-using ACE
+module Outputschedulers
+using ACE 
+using BayesianMLIP.NLModels
 export simpleoutp, atoutp, outputscheduler, feed!
 
 abstract type outputscheduler end
@@ -14,7 +14,7 @@ simpleoutp() = simpleoutp([], [])
 struct atoutp <: outputscheduler 
     at_traj
     energy
-    force
+    forces
 end 
 atoutp() = atoutp([], [], [])
 
@@ -29,6 +29,5 @@ function feed!(V, at, outp::atoutp)
     push!(outp.forces, forces(V, at))
 end
 
-x = simpleoutp()
-y = atoutp()
+
 end # end module 

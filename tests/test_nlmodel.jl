@@ -5,7 +5,7 @@ using BayesianMLIP.Dynamics
 using BayesianMLIP.Outputschedulers
 using Random: seed!, rand
 using JuLIP
-using Plots             # Add Plots pkg for data visualization 
+using Plots          
 
 maxdeg = 4 # max degree
 ord = 2 # max body order correlation 
@@ -13,8 +13,7 @@ Bsel = SimpleSparseBasis(ord, maxdeg)
 rcut = 5.0 # Cutoff radius
 
 # Create phi_mnl one particle basis
-B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, 
-                                 rin = 1.2, rcut = 5.0)
+B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, rin = 1.2, rcut = 5.0)
 
 # B1p -- B1p.bases --- 
 #     -- B1p.indices : [(1, 1), (1, 2), ... (3, 2), (4, 1), (3, 3), (3, 4)]
@@ -65,7 +64,7 @@ println(grad2)
 grad = cat(grad1, grad2, dims=1)       # Concatenate the two arrays
 
 sampler = VelocityVerlet(0.05, model, at)
-outp = atoutp([], [], [])
+outp = atoutp()
 nsteps = 100
 run!(sampler, model, at, nsteps; outp=outp)
 print(length(outp.at_traj))
