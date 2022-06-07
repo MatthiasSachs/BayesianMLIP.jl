@@ -35,7 +35,6 @@ function energy(m::FSModel, at::Atoms; nlist = nothing)
         B2 = ACE.evaluate(m.basis2, cfg) # For each i, B1 is a K-vector with elements B_1 ({r_{ij}}) ... B_K' ({r_{ij}})
 
         lin_part += sum( c*b for (c,b) in zip(m.c1,B1))                         # Sum up a_k B_k ({r_{ij}}) over index k=1 to K
-        # println("Nonlinear Sum: ", sum( c*b for (c,b) in zip(m.c2,B2)).val)
         nonlin_part += m.transform(sum( c*b for (c,b) in zip(m.c2,B2)).val)     # Sum up a'_k B'_k ({r_{ij}}) over k=1 to K'& transform with F
     end
     
@@ -50,7 +49,7 @@ function forces!(F, m::FSModel, at::Atoms; nlist = nothing)
     for k = 1:length(at)
         _, Rs = NeighbourLists.neigs(nlist, k)
         cfg = ACEConfig( [ ACE.State(rr = r)  for r in Rs ] ) 
-        F[k] += - sum(m.c1 .* ACE.evaluate_d(m.basis1, cfg)) # ACE.evaluate_d = (\nabla_{r_k} B_l)_{l=1}^{N_{basis}}
+        F[k] += - sum(m.c1 .* ACE.evaluate_d(m.basis1, cfg)) 
         F[k] += - sum(m.c2 .* ACE.evaluate_d(m.basis2, cfg)) * m.transform_d(sum(m.c2.*ACE.evaluate(m.basis2, cfg)).val) 
     end
     return F 

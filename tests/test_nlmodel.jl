@@ -1,9 +1,8 @@
-using Revise
-Revise.includet("../src/nlmodels.jl")
-
 using ACE
 using ACEatoms
 using BayesianMLIP.NLModels
+using BayesianMLIP.Dynamics
+using BayesianMLIP.Outputschedulers
 using Random: seed!, rand
 using JuLIP
 using Plots             # Add Plots pkg for data visualization 
@@ -53,10 +52,8 @@ model = FSModel(basis1, basis2,
                     x -> 1 / (2 * sqrt(x)), 
                     ones(length(basis1)), ones(length(basis2)))
 
-using BayesianMLIP.NLModels: eval_Model, eval_param_gradients, forces 
-
 #Evaluate potential energy of model at bulk configuration
-E = eval_Model(model, at)         #TASK: Write code that simulates this system using Langevin dynamics
+E = energy(model, at)
 
 # Evaluate gradient w.r.t. position vectors of particles 
 F = forces(model, at)
@@ -66,3 +63,13 @@ grad1, grad2 = eval_param_gradients(model, at)
 println(grad1)
 println(grad2)
 grad = cat(grad1, grad2, dims=1)       # Concatenate the two arrays
+
+sampler = VelocityVerlet(0.05, model, at)
+outp = atoutp([], [], [])
+nsteps = 100
+run!(sampler, model, at, nsteps; outp=outp)
+print(length(outp.at_traj))
+
+for i in 1:nsteps
+    println(at.X[1])
+end 

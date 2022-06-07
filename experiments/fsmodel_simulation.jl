@@ -1,10 +1,12 @@
 using BayesianMLIP.NLModels
 using BayesianMLIP.Dynamics
+using BayesianMLIP.Outputschedulers
+using BayesianMLIP.Utils
 using ACE, JuLIP
  
 
 maxdeg = 4
-ord = 3
+ord = 2
 Bsel = SimpleSparseBasis(ord, maxdeg)
 rcut = 5.0 
 
@@ -17,24 +19,42 @@ basis2 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 
 at = bulk(:Ti, cubic=true) * 3
 
-rattle!(at,0.1) 
+rattle!(at, 0.1) 
 model = FSModel(basis1, basis2, 
                     rcut, 
-                    x -> -sqrt(x+0.1), 
-                    x -> 1 / (2 * sqrt(x + 0.1)), 
+                    x -> -sqrt(x+0.01), 
+                    x -> 1 / (2 * sqrt(x+0.01)), 
                     ones(length(basis1)), zeros(length(basis2)))
 
-using BayesianMLIP.Dynamics
-using Copy
+r0 = rnn(:Al)
+Vpair = JuLIP.morse(;A=4.0, e0=.5, r0=r0, rcut=(1.9*r0, rcut))
+
+outp = atoutp()
+F1 = forces(model, at)
+F2 = forces(Vpair, at)
+E1 = energy(model, at)
+E2 = energy(Vpair, at)
+
+sampler = VelocityVerlet(0.05, Vpair, at)
+# sampler = BAOAB(0.05, model, at; γ=1.0, β=1.0)
+nsteps = 400
+run!(sampler, model, at, nsteps; outp=outp)
+animate(outp)
+
+
 at = bulk(:Ti, cubic=true) * 3
-N_obs =1000
+N_obs = 100
 nsteps = 1000
+sampler = VelocityVerlet(0.01, model, at)
 sampler = BAOAB(0.01, model, at; γ=1.0, β=1.0)
 data = []
-for k in 1:N_obs
+for _ in 1:N_obs        # Take approx 500 secs for 100 iterations 
     run!(sampler, model, at, nsteps; outp = nothing)
     push!(data, (at = deepcopy(at), E= energy(model,at), F = forces(model,at) ))
 end
+
+@benchmark test()
+
 
 struct GaussianNoiseLL
     model # has parameters "params"

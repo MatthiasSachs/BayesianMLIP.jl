@@ -9,8 +9,9 @@ using Plots
 using Random: seed!, rand
 using LinearAlgebra: dot
 
-# using BayesianMLIP.Outputschedulers
+using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
+
 
 export run!, step!
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB
@@ -94,24 +95,21 @@ function step!(s::BAOAB, V, at::AbstractAtoms)
     B_step!(s, at; hf=.5)
 end
 
-
-
 # Function that implements integrators over time interval. 
 # Pushes information on at.X and at.P
-function run!(d::Integrator, V, at::AbstractAtoms, Nsteps::Int; outp = nothing, config_temp = [])
+function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing, config_temp = [])
     if outp === nothing 
         for _ in 1:Nsteps 
-            step!(d::Integrator, V, at)
+            step!(d, V, at)
             # println(Hamiltonian(V, at))
-            push!(config_temp, config_temperature(d.F, at.X))
+            # push!(config_temp, config_temperature(d.F, at.X))
         end 
     else 
         for _ in 1:Nsteps 
-            step!(d::Integrator, V, at)
-            push!(outp.X_traj, copy(at.X))
-            push!(outp.P_traj, copy(at.P))
+            step!(d, V, at)
+            feed!(V, at, outp)
             # println(Hamiltonian(V, at))
-            push!(config_temp, config_temperature(d.F, at.X))
+            # push!(config_temp, config_temperature(d.F, at.X))
         end
     end 
 end
