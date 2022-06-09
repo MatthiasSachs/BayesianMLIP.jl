@@ -1,8 +1,9 @@
 using ACE
-using ACEatoms
-using BayesianMLIP.NLModels
+using ACEatoms                      # ACEatoms depends on ACE, the dependeny error is most 
+using BayesianMLIP.NLModels         # likely an incompatibility with some of these packages 
 using BayesianMLIP.Dynamics
 using BayesianMLIP.Outputschedulers
+using BayesianMLIP.Utils
 using Random: seed!, rand
 using JuLIP
 using Plots          
@@ -37,38 +38,31 @@ at = bulk(:Ti, cubic=true) * 3
 #                                      pbc: periodic boundary conditions
 
 
-# Restructure into list of 3 elements: 54-vector of X-values, Y-values, Z-values
-# XYZ_Coords = [ [point[1] for point in at.X], [point[2] for point in at.X], [point[3] for point in at.X] ]
-# scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3])     # Quick inspection of initial positions of particles 
-
 rattle!(at,0.1)                     # Perturbs the system, changes the input 'at' 
+r0 = rnn(:Al)
+model = FSModel(basis1, basis2, rcut, x -> -sqrt(x+0.1), x -> 1 / (2 * sqrt(x+0.1)), rand(length(basis1)), zeros(length(basis2)))
+model = JuLIP.morse(;A=4.0, e0=.5, r0=r0, rcut=(1.9*r0, rcut))                    
 
 
-#Create Finnis-Sinclair model, with struct defined in nlmodels.jl
-model = FSModel(basis1, basis2, 
-                    rcut, 
-                    x -> -sqrt(x), 
-                    x -> 1 / (2 * sqrt(x)), 
-                    ones(length(basis1)), ones(length(basis2)))
-
-#Evaluate potential energy of model at bulk configuration
-E = energy(model, at)
-
-# Evaluate gradient w.r.t. position vectors of particles 
-F = forces(model, at)
-
-# Evaluate the gradients w.r.t. linear parameters c1 and c2
-grad1, grad2 = eval_param_gradients(model, at)
-println(grad1)
-println(grad2)
-grad = cat(grad1, grad2, dims=1)       # Concatenate the two arrays
-
-sampler = VelocityVerlet(0.05, model, at)
+sampler = BAOAB(0.01, model, at) 
+# sampler = VelocityVerlet(0.05, model, at)
 outp = atoutp()
-nsteps = 100
-run!(sampler, model, at, nsteps; outp=outp)
-print(length(outp.at_traj))
+outp2 = atoutp()
+nsteps = 5000
+run!(sampler, model, at, nsteps; outp=outp2)
+animation(outp2)
+length(outp2.at_traj)
 
-for i in 1:nsteps
-    println(at.X[1])
+for j in 1:1 # 54 total, particle 33 and 50
+    println("------------------------------------")
+    for i in 50:50:5000
+        println("Step $(i)")
+        println("Particle $(j) Position:  ", outp.at_traj[i].X[j])
+        println("Particle $(j) Momenta:   ", outp.at_traj[i].P[j])
+        println("Particle $(j) Force:     ", outp.forces[i][j])
+        println("System Potential Energy: ", outp.energy[i])
+        println("System Hamiltonian:      ", outp.Hamiltonian[i])
+        println("")
+    end 
+
 end 

@@ -6,8 +6,9 @@ using JuLIP
 import JuLIP: forces, energy
 using NeighbourLists
 using Random: seed!
+using LinearAlgebra: dot
 
-export FSModel, energy, forces, FS_paramGrad
+export FSModel, energy, forces, FS_paramGrad, Hamiltonian
 
 struct FSModel      # <: Any
     basis1 # = B 
@@ -21,10 +22,9 @@ end
 
 function energy(m::FSModel, at::Atoms; nlist = nothing)
     # Function representing our approximation model \hat{E} of our true Finnis-Sinclair potential E
-
     # neighbourlist computes all the relevant particles within the rcut radius for each particle. 
     nlist = neighbourlist(at, m.rcut)       # fieldnames (:X, :C, :cutoff, :i, :j, :S, :first)
-
+    println("Energy is 0")
     lin_part, nonlin_part = 0.0,0.0
     for i = 1:length(at)       # i index in the summation, indexing over number of particles 
         _, Rs = NeighbourLists.neigs(nlist, i)
@@ -38,7 +38,7 @@ function energy(m::FSModel, at::Atoms; nlist = nothing)
         nonlin_part += m.transform(sum( c*b for (c,b) in zip(m.c2,B2)).val)     # Sum up a'_k B'_k ({r_{ij}}) over k=1 to K'& transform with F
     end
     
-    return lin_part + nonlin_part
+    return (lin_part + nonlin_part).val
 end
 
 #Implement Gradient w.r.t. position vectors
@@ -56,6 +56,7 @@ function forces!(F, m::FSModel, at::Atoms; nlist = nothing)
 end
 
 function allocate_F(n::Int)
+    println("Force is 0")
     return zeros(ACE.SVector{3, Float64}, n)
 end
 
@@ -95,5 +96,13 @@ end
 function energy(model::CombModel, at::Atoms)
     return sum(energy(m,at) for m in model.model_list)
 end
+
+function Hamiltonian(V, at::Atoms) 
+    # Wish we would directly call this on outp, but this would require outp to store 
+    # entire at object rather than at.X and at.P
+    PE = energy(V, at)
+    KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
+    return PE + KE 
+end 
 
 end
