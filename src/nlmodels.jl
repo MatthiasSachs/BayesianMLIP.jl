@@ -10,7 +10,7 @@ using LinearAlgebra: dot
 
 export FSModel, energy, forces, FS_paramGrad, Hamiltonian
 
-struct FSModel      # <: Any
+mutable struct FSModel      # <: Any
     basis1 # = B 
     basis2 # = B'
     rcut # cutoff radius of the ace bases B, B'

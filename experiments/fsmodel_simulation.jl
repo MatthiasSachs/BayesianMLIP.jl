@@ -5,6 +5,8 @@ using BayesianMLIP.Utils
 using ACE, JuLIP
 using LinearAlgebra: norm
  
+# Combine the stuff with Morse potential 
+
 # 1) Check that force works properly for linear version of fsmodel         
 # 2) Check regularized non-linear version ( + 0.1, sigmoid?, arctan?)
 # 3) Create synthetic data from a linear model with order = 3 or higher
@@ -199,7 +201,7 @@ end
 maxdeg = 4
 ord = 2
 Bsel = SimpleSparseBasis(ord, maxdeg)
-rcut = 5.0 
+rcut = 2* rnn(:Al) 
 
 B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, 
                                     rin = 1.2, rcut = 5.0)
@@ -207,7 +209,7 @@ ACE.init1pspec!(B1p, Bsel)
 basis1 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 basis2 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
 
-at = bulk(:Ti, cubic=true) * 3
+at = bulk(:Al, cubic=true) * 3
 rattle!(at, 0.1) 
 model = FSModel(basis1, basis2, 
                         rcut, 
@@ -218,7 +220,23 @@ model = FSModel(basis1, basis2,
 r0 = rnn(:Al) 
 Vpair = JuLIP.morse(;A=4.0, e0=.5, r0=r0, rcut=(1.9*r0, rcut)) 
 
+outp = atoutp()     # contains data on at, energy, and forces for each step 
 
+sampler = BAOAB(0.01, model, at) 
+
+energy(Vpair, at)
+
+forces(Vpair, at)
+
+# Check that the cutoffs are consisstent with other fsmodels
+# Run your system using BAOAB over the fsmodel, which will converge the the Gibbs measure of at 
+# Have the integrator append data on the at, energy, and force every 1000+ steps (so that they are sufficiently decorrelated) 
+
+at \sim Gibbs(fsmodel)
+data = (E=energy(fsmodel, at),F=forces(fsmodel, at) )
+then fit fsmodel 
+
+# 
 N_obs = 10
 nsteps = 1000
 sampler = BAOAB(0.01, model, at; γ=1.0, β=1.0)
@@ -248,9 +266,9 @@ model = FSModel(basis1, basis2,
 
 sm = GaussianNoiseLL(model, 1/54, data)
 
-function Likelihood(sm::GaussianNoiseLL)
-    # sm.model.c1 = c1 
-    # sm.model.c2 = c2
+function Likelihood(sm::GaussianNoiseLL, c1, c2)
+    sm.model.c1 = c1 
+    sm.model.c2 = c2
     N_obs = length(sm.data)
     cost = 0.0
     for i in 1:N_obs 
