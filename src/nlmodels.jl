@@ -8,9 +8,9 @@ using NeighbourLists
 using Random: seed!
 using LinearAlgebra: dot
 
-export FSModel, energy, forces, FS_paramGrad, Hamiltonian
+export FSModel, energy, forces, FS_paramGrad, Hamiltonian, CombModel
 
-struct FSModel      # <: Any
+mutable struct FSModel      # <: Any
     basis1 # = B 
     basis2 # = B'
     rcut # cutoff radius of the ace bases B, B'
@@ -21,12 +21,10 @@ struct FSModel      # <: Any
 end
 
 function energy(m::FSModel, at::Atoms; nlist = nothing)
-    # Function representing our approximation model \hat{E} of our true Finnis-Sinclair potential E
     # neighbourlist computes all the relevant particles within the rcut radius for each particle. 
     nlist = neighbourlist(at, m.rcut)       # fieldnames (:X, :C, :cutoff, :i, :j, :S, :first)
-    println("Energy is 0")
     lin_part, nonlin_part = 0.0,0.0
-    for i = 1:length(at)       # i index in the summation, indexing over number of particles 
+    for i = 1:length(at)                    # i index in the summation, indexing over number of particles 
         _, Rs = NeighbourLists.neigs(nlist, i)
         cfg = ACEConfig( [ ACE.State(rr = r) for r in Rs ] )
 
@@ -34,10 +32,9 @@ function energy(m::FSModel, at::Atoms; nlist = nothing)
         B1 = ACE.evaluate(m.basis1, cfg) # For each i, B1 is a K-vector with elements B_1 ({r_{ij}}) ... B_K ({r_{ij}})
         B2 = ACE.evaluate(m.basis2, cfg) # For each i, B1 is a K-vector with elements B_1 ({r_{ij}}) ... B_K' ({r_{ij}})
 
-        lin_part += sum( c*b for (c,b) in zip(m.c1,B1))                         # Sum up a_k B_k ({r_{ij}}) over index k=1 to K
+        lin_part += sum( c*b for (c,b) in zip(m.c1,B1))                     # Sum up a_k B_k ({r_{ij}}) over index k=1 to K
         nonlin_part += m.transform(sum( c*b for (c,b) in zip(m.c2,B2)).val)     # Sum up a'_k B'_k ({r_{ij}}) over k=1 to K'& transform with F
     end
-    
     return (lin_part + nonlin_part).val
 end
 
@@ -46,17 +43,16 @@ function forces!(F, m::FSModel, at::Atoms; nlist = nothing)
     if nlist === nothing
         nlist = neighbourlist(at, m.rcut)
     end
-    for k = 1:length(at)
-        _, Rs = NeighbourLists.neigs(nlist, k)
+    for i = 1:length(at)    #
+        _, Rs = NeighbourLists.neigs(nlist, i)
         cfg = ACEConfig( [ ACE.State(rr = r)  for r in Rs ] ) 
-        F[k] += - sum(m.c1 .* ACE.evaluate_d(m.basis1, cfg)) 
-        F[k] += - sum(m.c2 .* ACE.evaluate_d(m.basis2, cfg)) * m.transform_d(sum(m.c2.*ACE.evaluate(m.basis2, cfg)).val) 
+        F[i] += - sum(m.c1 .* ACE.evaluate_d(m.basis1, cfg)) 
+        F[i] += - sum(m.c2 .* ACE.evaluate_d(m.basis2, cfg)) * m.transform_d(sum(m.c2.*ACE.evaluate(m.basis2, cfg)).val) 
     end
     return F 
 end
 
 function allocate_F(n::Int)
-    println("Force is 0")
     return zeros(ACE.SVector{3, Float64}, n)
 end
 

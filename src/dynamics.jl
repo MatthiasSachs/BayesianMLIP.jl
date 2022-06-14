@@ -105,15 +105,16 @@ function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing, config_t
             # push!(config_temp, config_temperature(d.F, at.X))
         end 
     else 
-        for _ in 1:Nsteps 
+        for i in 1:Nsteps 
             step!(d, V, at)
             feed!(V, at, outp)
-            # println(Hamiltonian(V, at))
+            # KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
+            # println(i, " ", round(energy(V, at), digits=5), " ", round(KE, digits=5))
+            println(i, " ", Hamiltonian(V, at))
             # push!(config_temp, config_temperature(d.F, at.X))
         end
     end 
 end
-
 
 
 #at.pbc = (false,false, false)

@@ -3,7 +3,7 @@ using Plots
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
 
-export animate, animation
+export animation
 
 # animation 
 

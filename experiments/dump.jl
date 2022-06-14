@@ -1,3 +1,5 @@
+using LinearAlgebra: dot
+
 function mainFinnisSinclairSimulation() 
     maxdeg = 4
     ord = 2
