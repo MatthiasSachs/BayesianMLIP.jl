@@ -5,6 +5,8 @@ using BayesianMLIP.Utils
 using ACE, JuLIP
 using LinearAlgebra: norm
  
+# Combine the stuff with Morse potential 
+
 # 1) Check that force works properly for linear version of fsmodel         
 # 2) Check regularized non-linear version ( + 0.1, sigmoid?, arctan?)
 # 3) Create synthetic data from a linear model with order = 3 or higher
