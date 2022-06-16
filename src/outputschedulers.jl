@@ -3,22 +3,30 @@ using ACE
 using JuLIP
 using BayesianMLIP.NLModels
 export simpleoutp, atoutp, outputscheduler, feed!
-
+using ACE: val
 abstract type outputscheduler end
 
 struct atoutp <: outputscheduler 
     at_traj
     energy
+    kenergy
     forces
-    Hamiltonian
+    hamiltonian
 end 
-atoutp() = atoutp([], [], [], [])
+atoutp() = atoutp([], [], [], [], [])
 
 function feed!(V, at, outp::atoutp)
+
+    E = val(energy(V, at))
+    KE = kenergy(at)
+
     push!(outp.at_traj, deepcopy(at))
-    push!(outp.energy, energy(V, at))
+    push!(outp.energy, E)
+    push!(outp.kenergy, KE)
     push!(outp.forces, forces(V, at))
-    push!(outp.Hamiltonian, Hamiltonian(V, at))
+    push!(outp.hamiltonian, E+KE)
+    #@show hamiltonian(V,at)
+    #@show energy(V, at)
 end
 
 

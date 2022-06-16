@@ -110,7 +110,7 @@ function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing, config_t
             feed!(V, at, outp)
             # KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
             # println(i, " ", round(energy(V, at), digits=5), " ", round(KE, digits=5))
-            println(i, " ", Hamiltonian(V, at))
+            #println(i, " ", Hamiltonian(V, at))
             # push!(config_temp, config_temperature(d.F, at.X))
         end
     end 

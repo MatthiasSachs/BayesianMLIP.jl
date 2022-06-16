@@ -1,68 +1,56 @@
 using ACE
-using ACEatoms                      # ACEatoms depends on ACE, the dependeny error is most 
-using BayesianMLIP.NLModels         # likely an incompatibility with some of these packages 
+using ACEatoms 
+using BayesianMLIP           
+using BayesianMLIP.NLModels         
 using BayesianMLIP.Dynamics
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.Utils
 using Random: seed!, rand
 using JuLIP
-using Plots          
+using Plots 
+using ACE: O3, evaluate
+using StaticArrays
+using ACE: val
+#using BayesianMLIP.NLModels: set_params!
+##
 
-maxdeg = 4 # max degree
-ord = 2 # max body order correlation 
+
+# construct the basis
+maxdeg = 6
+ord = 3
+rcut = 2*rnn(:Al)
 Bsel = SimpleSparseBasis(ord, maxdeg)
-rcut = 5.0 # Cutoff radius
+B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, rcut=rcut)
+φ = ACE.Invariant()
+basis = ACE.SymmetricBasis(φ, B1p, O3(), Bsel)
 
-# Create phi_mnl one particle basis
-B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, Bsel = Bsel, rin = 1.2, rcut = 5.0)
+#initialize the model
+c1 = rand(SVector{1,Float64}, length(basis))
+c2 = rand(SVector{1,Float64}, length(basis))
+model1 = ACE.LinearACEModel(basis, c1, evaluator = :standard);
+model2 = ACE.LinearACEModel(basis, c2, evaluator = :standard);
 
-# B1p -- B1p.bases --- 
-#     -- B1p.indices : [(1, 1), (1, 2), ... (3, 2), (4, 1), (3, 3), (3, 4)]
-#     -- B1p.B_pool -- B1p.B_pool.arrays -- index
+#use default transformation
+m1 = FSModel(model1,model2, rcut);
 
-# Create Symmetric bases for fmmodel
-ACE.init1pspec!(B1p, Bsel)
-basis1 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
-basis2 = ACE.SymmetricBasis(ACE.Invariant(), B1p, Bsel)
-
-# Create bulk configuration
-at = bulk(:Ti, cubic=true) * 3      
-# Quick Inspection of at object 
-# Type Hierarchy: AbstractVector{StaticArrays.SVector{3, Float64}} 
-#                 -> DenseVector{StaticArrays.SVector{3, Float64}} 
-#                   -> Vector{StaticArrays.SVector{3, Float64}} * 
-# Type Vector with elements of Type StaticArrays.SVector{3, Float64} 
-
-# println(fieldnames(typeof(at)))     # (:X, :P, :M, :Z, :cell, :pbc, :calc, :dofmgr, :data)
-#                                      X: Positions, P: Momenta, Z: Species, M: Mass(?), 
-#                                      pbc: periodic boundary conditions
+#use costume transformation
+FS = props -> sum( (1 .+ val.(props).^2).^0.5 )
+m2 = FSModel(model1,model2, FS, rcut)
 
 
-rattle!(at,0.1)                     # Perturbs the system, changes the input 'at' 
-r0 = rnn(:Al)
-model = FSModel(basis1, basis2, rcut, x -> -sqrt(x+0.1), x -> 1 / (2 * sqrt(x+0.1)), rand(length(basis1)), zeros(length(basis2)))
-model = JuLIP.morse(;A=4.0, e0=.5, r0=r0, rcut=(1.9*r0, rcut))                    
+at = bulk(:Al, cubic=true) * 3 
 
+E1 = energy(m1,at)
+F1 = forces(m1,at)
 
-sampler = BAOAB(0.01, model, at) 
-# sampler = VelocityVerlet(0.05, model, at)
+E2 = energy(m2,at)
+F2 = forces(m2,at);
+
+rattle!(at,1.1)
+sampler = VelocityVerlet(0.01, m1, at) 
 outp = atoutp()
-outp2 = atoutp()
-nsteps = 5000
-run!(sampler, model, at, nsteps; outp=outp2)
-animation(outp2)
-length(outp2.at_traj)
+run!(sampler, m1, at, 1000; outp=outp)
 
-for j in 1:1 # 54 total, particle 33 and 50
-    println("------------------------------------")
-    for i in 50:50:5000
-        println("Step $(i)")
-        println("Particle $(j) Position:  ", outp.at_traj[i].X[j])
-        println("Particle $(j) Momenta:   ", outp.at_traj[i].P[j])
-        println("Particle $(j) Force:     ", outp.forces[i][j])
-        println("System Potential Energy: ", outp.energy[i])
-        println("System Hamiltonian:      ", outp.Hamiltonian[i])
-        println("")
-    end 
-
-end 
+plot(outp.energy, label="Potential Energy")
+plot!(outp.kenergy, label="Kinetic Energy")
+plot!(outp.hamiltonian, label="Hamiltonian")

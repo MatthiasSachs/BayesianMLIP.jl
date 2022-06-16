@@ -1,64 +1,81 @@
 module NLModels
 
 using ACE 
-using ACE: evaluate, val
 using ACEatoms
 using JuLIP
 import JuLIP: forces, energy
 using NeighbourLists
 using Random: seed!
 using LinearAlgebra: dot
-using Zygote
-using StaticArrays
 
-#using ACE, ACEbase, Test, ACE.Testing
-#using ACE: evaluate, SymmetricBasis, PIBasis, O3, State, val 
-#import ACE: nparams, set_params!, params,val 
-export FSModel, energy, forces,  hamiltonian, kenergy
+import ACE: nparams, set_params!, params,val 
+export FSModel, energy, forces, FS_paramGrad, Hamiltonian
 
-struct FSModel{T}
+struct FSModel
     model1::ACE.LinearACEModel
     model2::ACE.LinearACEModel
     transform
-    rcut::T
+    rcut
 end
 
-FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, rcut::T) where {T<:Real} = FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, props -> sum( (1 .+ val.(props).^2).^0.5 ), rcut::T) 
+FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, rcut::T) where {T <: Real} = FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, x -> sum( (1 .+ val.(x).^2).^0.5 ), rcut) 
 
 
-
-function JuLIP.energy(m::FSModel, at::Atoms) 
-    FS2 = m.transform
-    nlist = neighbourlist(at, m.rcut)
-    E =  ACE.Invariant(0.0)
-    for k = 1:length(at)
-        Js, Rs = NeighbourLists.neigs(nlist, k)    # Js = indices, Rs = PositionVectors 
-        cfg = ACEConfig( [ ACE.State(rr = r)  for r in Rs ] )
-        E += FS2(evaluate(m.model2, cfg))
-        E += evaluate(m.model1, cfg)[1]
+function energy(m::FSModel, at::Atoms; nlist = nothing) 
+    if nlist === nothing
+        nlist = neighbourlist(at, m.rcut)
     end
-    return E
-end
-
-function JuLIP.forces(m::FSModel, at::Atoms) 
-    nlist = neighbourlist(at, m.rcut)
-    F = zeros(SVector{3,Float64}, length(at))
-    for k = 1:length(at)
-        Js, Rs = NeighbourLists.neigs(nlist, k)    # Js = indices, Rs = PositionVectors 
+    lin_part, nonlin_part = 0.0, 0.0
+    for i = 1:length(at)    # sum over atoms 
+        _, Rs = NeighbourLists.neigs(nlist, i)  
         cfg = ACEConfig( [ ACE.State(rr = r)  for r in Rs ] )
-        g1 = Zygote.gradient(x ->  m.transform(evaluate(m.model2, x)), cfg)[1]
-        g2 = ACE.grad_config(m.model1, cfg)
-        for (i,j) in enumerate(Js)
-            F[j] += -g1[i].rr - g2[i][1].rr
-            F[k] +=  g1[i].rr + g2[i][1].rr
-        end
+        lin_part += evaluate(m.model1, cfg)[1].val # sum over basis 
+        nonlin_part += m.transform(evaluate(m.model2, cfg))[1] # sum over basis 
     end
-    return F
+    return lin_part + nonlin_part
 end
-
 
 function allocate_F(n::Int)
-    return zeros(SVector{3, Float64}, n)
+    return zeros(ACE.SVector{3, Float64}, n)
+end
+
+function forces(m::FSModel, at::Atoms; nlist = nothing) 
+    if nlist === nothing
+        nlist = neighbourlist(at, m.rcut)
+    end
+    F = allocate_F(length(at))
+    fsmodel = cfg -> m.transform(evaluate(m.model2, cfg))   
+    for i = 1:length(at)
+        Js, Rs = NeighbourLists.neigs(nlist, i)    # Js = indices, Rs = PositionVectors 
+        cfg = ACEConfig( [ ACE.State(rr = r)  for r in Rs ] )
+        for index in 1:length(Js) 
+            F[Js[index]] += -ACE.grad_config(m.model1, cfg)[index][1].rr      # Linear Part, adding Dstate to 3Vector
+            F[Js[index]] += -Zygote.gradient(fsmodel, cfg)[1][index].rr     # Nonlinear Part, 
+        end  
+    end
+    return F 
+end
+
+
+ACE.nparams(m::FSModel) = nparams(m.model1) + nparams(m.model2)
+
+ACE.params(m::FSModel) = concat(copy(m.model1.c),copy(m.model2.c))
+
+function ACE.set_params!(m::FSModel, c::Array{T}) where T<:Number 
+    set_params!(m, c[1:nparams(m.model1)],:lin)
+    set_params!(m, c[(nparams(m.model1)+1):(nparams(m.model1)+nparams(m.model2))], :nonlin)
+   return m 
+end
+
+function set_params!(m::FSModel, c::Array{T}, s::Symbol) where {T<:Number}
+    if s == :lin
+        set_params!(m.model1, c)
+    elseif s == :nonlin
+        set_params!(m.model2, c)
+    else
+        @error "non-valid reference to model in set_params "
+    end
+    return m
 end
 
 
@@ -131,6 +148,13 @@ end
 #     return grad1, grad2
 # end
 
+function forces(m::FSModel, at::Atoms; nlist = nothing) 
+    # Compute gradient of Finnis-Sinclair potential w.r.t. position vectors
+
+    F = allocate_F(length(at))
+    forces!(F, m::FSModel, at::Atoms; nlist=nlist) 
+    return F  # Vector{StaticArrays.SVector{3, Float64}}
+end
 
 struct CombModel <: AbstractCalculator
     model_list
@@ -144,14 +168,12 @@ function energy(model::CombModel, at::Atoms)
     return sum(energy(m,at) for m in model.model_list)
 end
 
-function kenergy(at::Atoms)
-    return 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
-end
-
-function hamiltonian(V, at::Atoms) 
+function Hamiltonian(V, at::Atoms) 
     # Wish we would directly call this on outp, but this would require outp to store 
     # entire at object rather than at.X and at.P
-    return energy(V, at) + kenergy(at::Atoms)
+    PE = energy(V, at)
+    KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
+    return PE + KE 
 end 
 
 end
