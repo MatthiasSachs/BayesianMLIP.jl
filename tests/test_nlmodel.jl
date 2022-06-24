@@ -10,48 +10,89 @@ using JuLIP
 using Plots 
 using ACE: O3, evaluate
 using StaticArrays
-using ACE: val
-#using BayesianMLIP.NLModels: set_params!
-##
+using ACE: val, SymmetricBasis
+using BayesianMLIP.NLModels: NLModel, CombPotential, svecs2vec, pack, unpack
+using BayesianMLIP.ACEflux
+using BayesianMLIP.ACEflux: FluxPotential
 
-
+using Test
 # construct the basis
-maxdeg = 6
-ord = 3
-rcut = 2*rnn(:Al)
+
+maxdeg = 4
+ord = 2
 Bsel = SimpleSparseBasis(ord, maxdeg)
-B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg, rcut=rcut)
+B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg)
 φ = ACE.Invariant()
-basis = ACE.SymmetricBasis(φ, B1p, O3(), Bsel)
+basis1 = SymmetricBasis(φ, B1p, O3(), Bsel)
 
-#initialize the model
-c1 = rand(SVector{1,Float64}, length(basis))
-c2 = rand(SVector{1,Float64}, length(basis))
-model1 = ACE.LinearACEModel(basis, c1, evaluator = :standard);
-model2 = ACE.LinearACEModel(basis, c2, evaluator = :standard);
+maxdeg = 4
+ord = 2
+Bsel = SimpleSparseBasis(ord, maxdeg)
+B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg)
+φ = ACE.Invariant()
+basis2 = SymmetricBasis(φ, B1p, O3(), Bsel)
 
-#use default transformation
-m1 = FSModel(model1,model2, rcut);
-
-#use costume transformation
+#Define generalized Finnis-Sinclair model
 FS = props -> sum( (1 .+ val.(props).^2).^0.5 )
-m2 = FSModel(model1,model2, FS, rcut)
+ID = props -> sum( val.(props) )
+np = 1
+c_m1 = rand(SVector{np,Float64}, length(basis1));
+nlm1 = NLModel(ACE.LinearACEModel(basis, c_m1, evaluator = :standard), np, ID);
+c_m2 = rand(SVector{np,Float64}, length(basis2));
+nlm2 = NLModel(ACE.LinearACEModel(basis, c_m1, evaluator = :standard), np, FS);
+
+rcut = 2*rnn(:Al)
 
 
+model = CombPotential(FluxPotential(nlm1, rcut),FluxPotential(nlm2, rcut));# this is the FS-model
+
+# test whether pack and unpack routines work as intended
+c12 = pack(model,svecs2vec(c_m1),svecs2vec(c_m2))
+c12b = pack(model,c_m1,c_m2)
+@test c12 == c12b
+c1, c2 = unpack(model, c12)
+@test c_m1 == c1 && c2 == c_m2
+
+# test energy and force evaluations
 at = bulk(:Al, cubic=true) * 3 
+rattle!(at,.5)
+E1 = energy(model,at)
+F1 = forces(model,at)
 
-E1 = energy(m1,at)
-F1 = forces(m1,at)
 
-E2 = energy(m2,at)
-F2 = forces(m2,at);
 
-rattle!(at,1.1)
-sampler = VelocityVerlet(0.01, m1, at) 
-outp = atoutp()
-run!(sampler, m1, at, 1000; outp=outp)
+using Distributions
+using Distributions: logpdf, MvNormal
+using LinearAlgebra 
+using BayesianMLIP.NLModels: params
 
-plot(outp.energy, label="Potential Energy")
-plot!(outp.kenergy, label="Kinetic Energy")
-plot!(outp.hamiltonian, label="Hamiltonian")
-xlabel!("Time")
+Ndata = 100
+data = []
+for k = 1:Ndata
+    data = push!(data,(at= rattle!(at,.1), E= randn(), F= randn(SVector{3, Float64}, length(F1))))
+end
+
+# Define log_likelihood function
+w0 = 1.0 
+weight_E, weight_F = w0, w0/ (3*length(at)) # weights correspond to precision of noise
+
+log_likelihood = (model, d) -> -weight_E * (d.E - energy(model,d.at)) -  weight_F * sum(sum(abs2, g.rr - f) 
+                     for (g, f) in zip(forces(model, d.at), d.F))
+# Define prior 
+prior = MvNormal(zeros(length(c12)),I)
+
+# Define log posterior 
+function log_posterior(model, data, prior, log_likelihood)
+    return sum(log_likelihood(model, d) for d in data) + logpdf(prior, params(model))
+end
+
+# typtical steps to evaluate the log-posterior 
+set_params!(model,randn(length(c12)));
+log_posterior(model, data, prior, log_likelihood)
+
+@time log_posterior(model, data, prior, log_likelihood) # Speed quite slow... Can we optimize this?
+
+
+
+
+
