@@ -16,7 +16,8 @@ using BayesianMLIP.ACEflux
 using BayesianMLIP.ACEflux: FluxPotential
 
 using Test
-# construct the basis
+
+# construct two bases
 
 maxdeg = 4
 ord = 2
@@ -69,7 +70,7 @@ using BayesianMLIP.NLModels: params
 Ndata = 100
 data = []
 for k = 1:Ndata
-    data = push!(data,(at= rattle!(at,.1), E= randn(), F= randn(SVector{3, Float64}, length(F1))))
+    data = push!(data,(at= rattle!(at,.1), E= randn(), F= randn(SVector{3, Float64}, length(F1)))) #replace randn() and rand(SEVec...) by synthetic data
 end
 
 # Define log_likelihood function
