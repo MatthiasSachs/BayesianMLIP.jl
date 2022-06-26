@@ -1,6 +1,5 @@
 module Dynamics 
 
-
 using ACE
 using JuLIP: AbstractAtoms
 using JuLIP
@@ -12,15 +11,9 @@ using LinearAlgebra: dot
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
 
-
 export run!, step!
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB
 
-# Consturct Hierarchy of Abstract Types for Organization
-# Integrator --- HamiltonianIntegrator ------------------ VelocityVerlet(at, F, h)
-#                                  ------------------ PositionVerlet(at, F, h)
-#                                  ------------------ Thermostat ---------------- Langevin ----- BAOAB 
-#          --- GradientIntegrator ----- OLDIntegrator --- EulerMaruyama(at, h, β)
 
 abstract type Integrator end
 abstract type HamiltonianIntegrator <: Integrator end 
@@ -63,7 +56,7 @@ function step!(s::PositionVerlet, V, at::AbstractAtoms ) #V::SitePotential
     A_step!(s, at; hf=.5)
     s.F = forces(V, at)
     B_step!(s, at; hf=1.0)
-    A_step!(s, at; hf=.5)
+    A_step!(s, at; hf=.5) 
 end
 
 function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=1.0) where {T}
@@ -77,12 +70,12 @@ get_invtemp(d::Thermostat) = d.β
 
 mutable struct BAOAB{T} <: Langevin where {T<:Real}  
     h::T        # Step size 
-    F::Vector{ACE.SVector{3,T}}
+    F::Vector   # Force vector
     β::T        # Inverse Temperature 
     α::T        # Integrator parameters
     ζ::T        # Integrator parameters 
 end
-BAOAB(h::T, V, at::AbstractAtoms ; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB(h, forces(V, at), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))
+BAOAB(h::T, V, at::Atoms; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB(h, forces(V, at), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))
 
 O_step!(s::Langevin, at::AbstractAtoms) = set_momenta!(at, s.α .* at.P + s.ζ * randn(ACE.SVector{3,Float64},length(at)) )
 
@@ -105,7 +98,7 @@ function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing, config_t
             # push!(config_temp, config_temperature(d.F, at.X))
         end 
     else 
-        for i in 1:Nsteps 
+        for _ in 1:Nsteps 
             step!(d, V, at)
             feed!(V, at, outp)
             # KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])

@@ -3,7 +3,7 @@ using BayesianMLIP.Dynamics
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.Utils
 using ACE, JuLIP
-using LinearAlgebra: norm
+using LinearAlgebra: norm 
  
 # Combine the stuff with Morse potential 
 

@@ -83,15 +83,15 @@ unpack(calc::CombPotential, c12::AbstractArray{T})  where T<:Number = mat2svecs(
 
 
 
-# function kenergy(at::Atoms)
-#     return 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
-# end
+function kenergy(at::Atoms)
+    return 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
+end
 
-# function hamiltonian(V, at::Atoms) 
-#     # Wish we would directly call this on outp, but this would require outp to store 
-#     # entire at object rather than at.X and at.P
-#     return energy(V, at) + kenergy(at::Atoms)
-# end 
+function hamiltonian(V, at::Atoms) 
+    # Wish we would directly call this on outp, but this would require outp to store 
+    # entire at object rather than at.X and at.P
+    return energy(V, at) + kenergy(at::Atoms)
+end 
 
 
 # FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, rcut::T) where {T<:Real} = FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, props ->  (1 .+ val.(props).^2).^0.5, rcut::T) 

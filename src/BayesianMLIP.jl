@@ -4,6 +4,6 @@ module BayesianMLIP
     include("./outputschedulers.jl")
     include("./dynamics.jl")
     include("./utils.jl")
-    include("./samplers.jl")
+    include("./sampler.jl")
 
 end
