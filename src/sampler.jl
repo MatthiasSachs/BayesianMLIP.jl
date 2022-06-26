@@ -20,7 +20,6 @@ mutable struct SimpleMHsampler <: MHsampler     # Should fieldnames be this?
     prior 
     log_posterior 
 end 
-SimpleMHsampler(θ, μ, Σ) = SimpleMHsampler(θ, μ, Σ, 1, 1.0)     # Need to update constructor function
 
 mutable struct AdaptiveMHsampler <: MHsampler   # Should fieldnames be this? 
     θ ::Vector{Float64}
