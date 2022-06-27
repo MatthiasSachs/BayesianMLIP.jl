@@ -14,12 +14,21 @@ mutable struct SimpleMHsampler <: MHsampler     # Should fieldnames be this?
     μ ::Vector{Float64}
     Σ
     step::Int64
+    log_target::Float64
     weight_E::Float64
     weight_F::Float64 
     log_likelihood
     prior 
     log_posterior 
 end 
+
+mutable struct StatisticalModel
+    log_likelihood
+    prior
+    model
+    data
+end
+
 
 mutable struct AdaptiveMHsampler <: MHsampler   # Should fieldnames be this? 
     θ ::Vector{Float64}
@@ -34,18 +43,19 @@ function step!(mhsampler::SimpleMHsampler, model, log_posterior)
     θ_prime = vec(rand(MvNormal(mhsampler.θ, mhsampler.Σ), 1))
 
     # Initialize models with parameters θ_k and θ_prime 
-    model1 = deepcopy(model);
-    model2 = deepcopy(model);
-    set_params!(model1, mhsampler.θ)    # Set parameters θ
-    set_params!(model2, θ_prime)        # Set parameters θ'
+    #model1 = deepcopy(model);
+    #model2 = deepcopy(model);
+    #set_params!(model1, mhsampler.θ)    # Set parameters θ
+    set_params!(model, θ_prime)        # Set parameters θ'
 
-    a = log_posterior(model1, data, prior, log_likelihood)  # Calculate log_posterior to get acceptance probability
-    b = log_posterior(model2, data, prior, log_likelihood)  # Calculate log_posterior to get acceptance probability
+    #a = log_posterior(model1, data, prior, log_likelihood)  # Calculate log_posterior to get acceptance probability
+    b = log_posterior(model, data, prior, log_likelihood)  # Calculate log_posterior to get acceptance probability
 
     logU = log(rand())      # Uniform[0, 1]
     
-    if logU < min(0, a - b) 
-        mhsampler.θ = θ_prime           # Update to proposed state
+    if logU < min(0,amhsampler.log_target- b) 
+        mhsampler.θ = θ_prime                # Update to proposed state
+        amhsampler.log_target = b         # Update log_target 
     else logU ≥ min(0, a - b)
         # mhsampler.θ = mhsampler.θ       # Keep state the same
     end 
