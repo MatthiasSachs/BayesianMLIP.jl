@@ -54,16 +54,20 @@ using Distributions
 using Distributions: logpdf, MvNormal
 using LinearAlgebra 
 using BayesianMLIP.NLModels: params
+using JLD2
 
 sampler = BAOAB(0.001, model, at)
 
 Ndata = 100
-data = []
+data = load_object("data.jld2")
 for k = 1:Ndata
     run!(sampler, model, at, 1000; outp=nothing)
     push!(data,(at= deepcopy(at), E = energy(model, at), F= forces(model, at))) 
 end
 
+# using JLD2
+# save_object("data.jld2", data)
+# k = load_object("data.jld2")
 
 # Define log_likelihood function
 w0 = 1.0 
