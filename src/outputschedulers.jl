@@ -6,6 +6,11 @@ export simpleoutp, atoutp, outputscheduler, feed!, MHoutp
 using ACE: val
 abstract type outputscheduler end
 
+struct MHoutp <: outputscheduler
+    θ_steps
+end
+MHoutp() = MHoutp([]) 
+
 struct atoutp <: outputscheduler 
     at_traj
     energy
@@ -32,21 +37,3 @@ end
 
 end # end module 
 
-module MHoutputschedulers 
-using ACE 
-using JuLIP
-using BayesianMLIP.NLModels
-using BayessianMLIP.Samplers
-export MHoutp, feed! 
-using ACE: val
-
-struct MHoutp
-    θ_steps
-end
-MHoutp() = MHoutp([]) 
-
-function feed!(θ, outp::MHoutp)
-    push!(outp.θ_steps, θ)
-end 
-
-end # end module

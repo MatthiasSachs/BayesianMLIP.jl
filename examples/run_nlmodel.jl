@@ -5,6 +5,8 @@ using BayesianMLIP.NLModels
 using BayesianMLIP.Dynamics
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.Utils
+using BayesianMLIP.MHoutputschedulers
+using BayesianMLIP.Samplers 
 using Random: seed!, rand
 using JuLIP
 using Plots 
@@ -16,6 +18,7 @@ using BayesianMLIP.ACEflux
 using BayesianMLIP.ACEflux: FluxPotential
 
 using Test
+using JLD2
 
 function createFSmodel(maxdeg, ord)
     # construct two bases
@@ -44,11 +47,14 @@ function createFSmodel(maxdeg, ord)
     return model
 end 
 
-model = createFSmodel(6, 2)
-c = params(model)
+fsmodel = createFSmodel(6, 2);
+true_θ = load_object("true_theta.jld2");
+set_params!(fsmodel, true_θ);
+save_object("true_theta.jld2", true_θ)
+# k = load_object("true_theta.jld2")
 
-at = bulk(:Al, cubic=true) * 2 
-rattle!(at,.5)
+at = bulk(:Al, cubic=true) * 2; 
+rattle!(at,.5);
 
 using Distributions
 using Distributions: logpdf, MvNormal
@@ -56,62 +62,78 @@ using LinearAlgebra
 using BayesianMLIP.NLModels: params
 using JLD2
 
-sampler = BAOAB(0.001, model, at)
+sampler = BAOAB(0.001, fsmodel, at)
 
-Ndata = 100
-data = load_object("data.jld2")
+Ndata = 10
+data = []
 for k = 1:Ndata
-    run!(sampler, model, at, 1000; outp=nothing)
-    push!(data,(at= deepcopy(at), E = energy(model, at), F= forces(model, at))) 
+    println(k)
+    BayesianMLIP.Dynamics.run!(sampler, fsmodel, at, 1000; outp=nothing)
+    push!(data,(at= deepcopy(at), E = energy(fsmodel, at), F= forces(fsmodel, at))) 
+
 end
+
+# save_object("data.jld2", data)
+data = load_object("data.jld2")
 
 # using JLD2
 # save_object("data.jld2", data)
 # k = load_object("data.jld2")
 
-# Define log_likelihood function
 w0 = 1.0 
 weight_E, weight_F = w0, w0/ (3*length(at)) # weights correspond to precision of noise
 
-# Log likelihood (Negative cost) for single data point, defined to be the sum of the squares of the elementwise differences
-# Modification: Likelihood function only includes energy observations 
-log_likelihood = (model, d) -> -weight_E * (d.E - energy(model,d.at))^2
+statModel = StatisticalModel(
+    (model, d) -> -1.0 * (d.E - energy(model,d.at))^2, 
+    MvNormal(zeros(length(true_θ)),I), 
+    fsmodel, 
+    data
+);
 
-# Define prior 
-prior = MvNormal(zeros(length(c)),I) 
+# Want to maximize log_posterior, i.e. minimize U 
+log_posterior(statModel, randn(length(true_θ)))
+log_posterior(statModel, true_θ)        # true max 
 
-# Define log posterior using formula p(θ | D ) ∝ p(D | θ) p(θ) = p(θ) ∏_i^N p(d_i | θ) ⟹ ...
-function log_posterior(model, data, prior, log_likelihood)
-    return sum(log_likelihood(model, d) for d in data) + logpdf(prior, c)
-end
+logpdf(statModel.prior, true_θ)
 
-function U(θ)
-    set_params!(model, θ) 
-    return -log_posterior(model, data, prior, log_likelihood)
+function U(m::StatisticalModel, θ)
+    return -log_posterior(m, θ)
 end 
 
-theta = randn(72)
-U(theta)
 
-using Zygote
-using ForwardDiff
-# Need to run BAOAB on potential U 
-inp = ones(72)
-U(inp)
-Zygote.gradient((x...) -> sum([i^2 for i in x]), inp...)
-Zygote.gradient(U, inp)
-
-
-
+# Implement MH algorithm
+using BayesianMLIP 
+using BayesianMLIP.NLModels         
+using BayesianMLIP.Dynamics   
+using BayesianMLIP.Outputschedulers
+using BayesianMLIP.Utils
 using BayesianMLIP.MHoutputschedulers
 using BayesianMLIP.Samplers 
 
-outp = MHoutp()
-MetroHastings = SimpleMHsampler(randn(length(c12)), randn(length(c12)), I)
+outp = BayesianMLIP.Outputschedulers.MHoutp()     
+outp = BayesianMLIP.MHoutputschedulers.MHoutp()    # error?
+
+MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(true_θ)
+MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(randn(length(true_θ)))
+# BayesianMLIP.Samplers.step!(MetroHastings, statModel)
+BayesianMLIP.Samplers.run!(MetroHastings, statModel, 1000, outp)
+
+final = outp.θ_steps[length(outp.θ_steps)]
+
+norm(final - θ_true)
+
+length(outp.θ_steps)
+
+logpdf(statModel.prior, final)
+
+set_params!(statModel.model, c)
+log_posterior(statModel, c) 
 
 
-BayesianMLIP.Samplers.run!(MetroHastings, 1000, model, log_posterior, outp)
+visual_x = []
+visual_y = []
 
-for step in outp.θ_steps
-    println(step[1])
+for elem in outp.θ_steps
+    push!(visual_x, elem[1])
+    push!(visual_y, elem[2])
 end

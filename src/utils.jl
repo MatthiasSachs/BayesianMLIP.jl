@@ -1,9 +1,24 @@
 module Utils
 using Plots 
+using Distributions
+using Distributions: logpdf, MvNormal
+using LinearAlgebra 
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
 
-export animation
+export animation, StatisticalModel, log_posterior
+
+mutable struct StatisticalModel 
+    log_likelihood
+    prior
+    model
+    data
+end 
+
+function log_posterior(m::StatisticalModel, θ) 
+    set_params!(m.model, θ)
+    return sum(m.log_likelihood(m.model, d) for d in m.data) + logpdf(m.prior, θ)
+end
 
 # animation 
 
