@@ -48,52 +48,51 @@ function createFSmodel(maxdeg, ord)
 end 
 
 fsmodel = createFSmodel(6, 2);
-true_θ = load_object("true_theta.jld2");
-set_params!(fsmodel, true_θ);
-save_object("true_theta.jld2", true_θ)
-# k = load_object("true_theta.jld2")
-
+θ = params(fsmodel); 
 at = bulk(:Al, cubic=true) * 2; 
 rattle!(at,.5);
 
 using Distributions
-using Distributions: logpdf, MvNormal
+using Distributions: logpdf, MvNormal, Normal 
 using LinearAlgebra 
 using BayesianMLIP.NLModels: params
 using JLD2
 
 sampler = BAOAB(0.001, fsmodel, at)
 
-Ndata = 10
-data = []
-for k = 1:Ndata
-    println(k)
-    BayesianMLIP.Dynamics.run!(sampler, fsmodel, at, 1000; outp=nothing)
-    push!(data,(at= deepcopy(at), E = energy(fsmodel, at), F= forces(fsmodel, at))) 
+function generate_data(Ndata::Int64) 
+    data = []
+    for k = 1:Ndata
+        BayesianMLIP.Dynamics.run!(sampler, fsmodel, at, 1000; outp=nothing)
+        # push data with Gaussian noise
+        push!(data,(at= deepcopy(at), E = energy(fsmodel, at), F= forces(fsmodel, at))) 
+        println("Data added: ", k)
+    end
+    return data
+end 
 
-end
-
-# save_object("data.jld2", data)
-data = load_object("data.jld2")
-
-# using JLD2
-# save_object("data.jld2", data)
-# k = load_object("data.jld2")
+data = load_object("Data/data1.jld2")
 
 w0 = 1.0 
 weight_E, weight_F = w0, w0/ (3*length(at)) # weights correspond to precision of noise
+log_likelihood = (model, d) -> -weight_E * abs(d.E - energy(model,d.at)) -  weight_F * sum(sum(abs2, g.rr - f.rr) 
+                     for (g, f) in zip(forces(model, d.at), d.F))
+log_likelihood_Energy = (model, d) -> -1.0 * (d.E - energy(model,d.at))^2
+
+# Much of the computing power is used to solve for the force part of log_likelihood
 
 statModel = StatisticalModel(
-    (model, d) -> -1.0 * (d.E - energy(model,d.at))^2, 
-    MvNormal(zeros(length(true_θ)),I), 
+    log_likelihood_Energy, 
+    MvNormal(zeros(length(params(fsmodel))),I), 
     fsmodel, 
     data
 );
 
 # Want to maximize log_posterior, i.e. minimize U 
-log_posterior(statModel, randn(length(true_θ)))
-log_posterior(statModel, true_θ)        # true max 
+log_posterior(statModel, randn(length(params(fsmodel))))
 
+true_θ = load_object("Data/true_theta1.jld2")
+log_posterior(statModel, true_θ)
 logpdf(statModel.prior, true_θ)
 
 function U(m::StatisticalModel, θ)
@@ -114,11 +113,26 @@ outp = BayesianMLIP.Outputschedulers.MHoutp()
 outp = BayesianMLIP.MHoutputschedulers.MHoutp()    # error?
 
 MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(true_θ)
-MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(randn(length(true_θ)))
+MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(rand(length(params(fsmodel))))
 # BayesianMLIP.Samplers.step!(MetroHastings, statModel)
-BayesianMLIP.Samplers.run!(MetroHastings, statModel, 1000, outp)
+BayesianMLIP.Samplers.run!(MetroHastings, statModel, 300, outp)
 
 final = outp.θ_steps[length(outp.θ_steps)]
+true_θ
+
+using Plots
+x=-1.0:1.0:1.0
+y=-10.0:1.0:10.0
+
+function log_post(x::Float64, y::Float64) 
+    test = true_θ 
+    test[1] = x 
+    test[2] = y
+    return U(statModel, test)
+end 
+
+surface(x,y,log_post)
+
 
 norm(final - θ_true)
 
