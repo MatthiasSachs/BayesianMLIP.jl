@@ -1,12 +1,13 @@
 module MHoutputschedulers 
 using ACE 
-using JuLIP
-using BayesianMLIP.NLModels
-using BayessianMLIP.Samplers
-export MHoutp, feed!, greet
 using ACE: val
+using JuLIP
 
-struct MHoutp
+export feed!
+
+abstract type mhoutputscheduler end
+
+struct MHoutp <: mhoutputscheduler
     θ_steps
 end
 MHoutp() = MHoutp([]) 

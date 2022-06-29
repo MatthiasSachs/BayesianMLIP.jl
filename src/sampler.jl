@@ -1,11 +1,13 @@
 module Samplers
 using Distributions
-using BayesianMLIP.MHoutputschedulers
 using BayesianMLIP.NLModels
 using BayesianMLIP.Utils
 using BayesianMLIP.ACEflux: FluxPotential
 using LinearAlgebra
 using BayesianMLIP.Outputschedulers
+
+using BayesianMLIP.MHoutputschedulers: MHoutp
+
 export SimpleMHsampler, AdaptiveMHsampler, step!, run!
 
 abstract type sampler end 
