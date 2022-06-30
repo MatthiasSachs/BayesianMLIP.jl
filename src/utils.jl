@@ -38,4 +38,18 @@ function animation(outp::atoutp ; name::String="anim", trace=false)
     gif(anim, "$(name).mp4", fps=200)
 end
 
+
+# using Plots
+# x=-1.0:1.0:1.0
+# y=-10.0:1.0:10.0
+
+# function log_post(x::Float64, y::Float64) 
+#     test = true_θ 
+#     test[1] = x 
+#     test[2] = y
+#     return U(statModel, test)
+# end 
+
+# surface(x,y,log_post)
+
 end 

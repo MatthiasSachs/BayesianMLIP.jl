@@ -6,11 +6,6 @@ export simpleoutp, atoutp, outputscheduler, feed!, MHoutp
 using ACE: val
 abstract type outputscheduler end
 
-struct MHoutp <: outputscheduler
-    θ_steps
-end
-MHoutp() = MHoutp([]) 
-
 struct atoutp <: outputscheduler 
     at_traj
     energy

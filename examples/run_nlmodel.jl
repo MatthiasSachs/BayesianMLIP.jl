@@ -20,7 +20,7 @@ using BayesianMLIP.ACEflux: FluxPotential
 using Test
 using JLD2
 
-function createFSmodel(maxdeg, ord)
+function createFSmodel(maxdeg::Int64, ord::Int64, rcut::Float64)
     # construct two bases
     Bsel = SimpleSparseBasis(ord, maxdeg)
     B1p = ACE.Utils.RnYlm_1pbasis(; maxdeg=maxdeg)
@@ -41,13 +41,11 @@ function createFSmodel(maxdeg, ord)
     c_m2 = rand(SVector{np,Float64}, length(basis2));
     nlm2 = NLModel(ACE.LinearACEModel(basis2, c_m2, evaluator = :standard), np, FS);
 
-    rcut = 2*rnn(:Al)
-
     model = CombPotential(FluxPotential(nlm1, rcut),FluxPotential(nlm2, rcut));# this is the FS-model
     return model
 end 
 
-fsmodel = createFSmodel(6, 2);
+fsmodel = createFSmodel(6, 2, 2*rnn(:Al));
 θ = params(fsmodel); 
 at = bulk(:Al, cubic=true) * 2; 
 rattle!(at,.5);
@@ -60,18 +58,28 @@ using JLD2
 
 sampler = BAOAB(0.001, fsmodel, at)
 
-function generate_data(Ndata::Int64) 
-    data = []
+function generate_data(Ndata::Int64, sampler, model, at) 
+    energy_std = 2.687172212269082      # 0.05 times the mean of 280 energies in dataset1
+    forces_std = 0.012395149775211672   # 0.05 times the mean of the norm of 280*32*3 components of each energy in dataset1
+    data = []   # data = Dict("theta" => theta, "data" => data)
     for k = 1:Ndata
-        BayesianMLIP.Dynamics.run!(sampler, fsmodel, at, 1000; outp=nothing)
+        BayesianMLIP.Dynamics.run!(sampler, model, at, 1000; outp=nothing)
         # push data with Gaussian noise
-        push!(data,(at= deepcopy(at), E = energy(fsmodel, at), F= forces(fsmodel, at))) 
+        Energy = energy(fsmodel, at)
+        Forces = forces(fsmodel, at) 
+        NoisyEnergy = Energy + rand(Normal(0, energy_std))
+        NoisyForces = [ f + ACE.DState(rr = forces_std * randn(SVector{3, Float64})) for f in Forces]
+        push!( data, (at= deepcopy(at), E = NoisyEnergy, F= NoisyForces) )
         println("Data added: ", k)
     end
-    return data
+
+    theta = params(model)
+
+    return (theta, data)
 end 
 
-data = load_object("Data/data1.jld2")
+Theta = load_object("Data/dataset1.jld2")["theta"];
+Data = load_object("Data/dataset1.jld2")["data"];
 
 w0 = 1.0 
 weight_E, weight_F = w0, w0/ (3*length(at)) # weights correspond to precision of noise
@@ -81,73 +89,53 @@ log_likelihood_Energy = (model, d) -> -1.0 * (d.E - energy(model,d.at))^2
 
 # Much of the computing power is used to solve for the force part of log_likelihood
 
+priorNormal = MvNormal(zeros(length(params(fsmodel))),I)
+
 statModel = StatisticalModel(
     log_likelihood_Energy, 
-    MvNormal(zeros(length(params(fsmodel))),I), 
+    priorNormal, 
     fsmodel, 
-    data
+    Data
 );
 
 # Want to maximize log_posterior, i.e. minimize U 
 log_posterior(statModel, randn(length(params(fsmodel))))
-
-true_θ = load_object("Data/true_theta1.jld2")
-log_posterior(statModel, true_θ)
-logpdf(statModel.prior, true_θ)
+log_posterior(statModel, Theta)
+# logpdf(statModel.prior, Theta)
 
 function U(m::StatisticalModel, θ)
     return -log_posterior(m, θ)
 end 
 
-
-# Implement MH algorithm
-using BayesianMLIP 
-using BayesianMLIP.NLModels         
-using BayesianMLIP.Dynamics   
-using BayesianMLIP.Outputschedulers
-using BayesianMLIP.Utils
-using BayesianMLIP.MHoutputschedulers
-using BayesianMLIP.Samplers 
-
-outp = BayesianMLIP.Outputschedulers.MHoutp()     
-outp = BayesianMLIP.MHoutputschedulers.MHoutp()    # error?
-
-MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(true_θ)
+   
+outp = BayesianMLIP.MHoutputschedulers.MHoutp()
+# MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(true_θ)
 MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(rand(length(params(fsmodel))))
-# BayesianMLIP.Samplers.step!(MetroHastings, statModel)
-BayesianMLIP.Samplers.run!(MetroHastings, statModel, 300, outp)
+BayesianMLIP.Samplers.run!(MetroHastings, statModel, 40, outp)
 
-final = outp.θ_steps[length(outp.θ_steps)]
-true_θ
+outp.log_posterior
 
-using Plots
-x=-1.0:1.0:1.0
-y=-10.0:1.0:10.0
+timesteps = 500
+no_trials = 30
 
-function log_post(x::Float64, y::Float64) 
-    test = true_θ 
-    test[1] = x 
-    test[2] = y
-    return U(statModel, test)
+outp_collection = [ BayesianMLIP.MHoutputschedulers.MHoutp() for i in 1:no_trials] 
+for i in 1:no_trials 
+    MetroHastings = BayesianMLIP.Samplers.SimpleMHsampler(rand(length(params(fsmodel))))
+    BayesianMLIP.Samplers.run!(MetroHastings, statModel, timesteps, outp_collection[i])
 end 
 
-surface(x,y,log_post)
+comb = log_posterior(statModel, Theta) * ones(timesteps)
+for i in 1:no_trials
+    comb = hcat(comb, outp_collection[i].log_posterior)
+end 
+
+plot(1:timesteps, comb, title="MH TimeStep vs Log Posterior Value", labels=nothing)
 
 
-norm(final - θ_true)
+
+
+norm(final - Theta)
 
 length(outp.θ_steps)
 
 logpdf(statModel.prior, final)
-
-set_params!(statModel.model, c)
-log_posterior(statModel, c) 
-
-
-visual_x = []
-visual_y = []
-
-for elem in outp.θ_steps
-    push!(visual_x, elem[1])
-    push!(visual_y, elem[2])
-end
