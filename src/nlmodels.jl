@@ -10,7 +10,7 @@ using Random: seed!
 using LinearAlgebra: dot
 using Zygote
 using StaticArrays
-using BayesianMLIP.ACEflux: FluxPotential
+using BayesianMLIP.MiniACEflux: FluxPotential
 
 import ACE: set_params!, nparams, params
 

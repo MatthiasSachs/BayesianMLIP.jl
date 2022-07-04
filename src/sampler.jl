@@ -2,7 +2,7 @@ module Samplers
 using Distributions
 using BayesianMLIP.NLModels
 using BayesianMLIP.Utils
-using BayesianMLIP.ACEflux: FluxPotential
+using BayesianMLIP.MiniACEflux: FluxPotential
 using LinearAlgebra
 using BayesianMLIP.Outputschedulers
 

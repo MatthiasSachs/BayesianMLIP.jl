@@ -1,3 +1,3 @@
-module ACEflux
+module MiniACEflux
     include("./calculator.jl")
 end

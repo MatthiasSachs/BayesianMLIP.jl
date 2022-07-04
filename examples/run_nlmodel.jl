@@ -14,8 +14,8 @@ using ACE: O3, evaluate
 using StaticArrays
 using ACE: val, SymmetricBasis
 using BayesianMLIP.NLModels: NLModel, CombPotential, svecs2vec, pack, unpack
-using BayesianMLIP.ACEflux
-using BayesianMLIP.ACEflux: FluxPotential
+using BayesianMLIP.MiniACEflux
+using BayesianMLIP.MiniACEflux: FluxPotential
 
 using Test
 using JLD2
