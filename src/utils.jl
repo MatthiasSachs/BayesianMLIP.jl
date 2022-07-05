@@ -67,13 +67,16 @@ function get_glp(sm::StatisticalModel)
 end
 
 function get_glp(gll, glpr)
-    function glp(c::AbstractArray, batch)
-        return sum(gll(c,d) for d in batch) + glpr(c)
+    function glp(c::AbstractArray, data)
+        return sum(gll(c,d) for d in data) + glpr(c)
     end
     return glp
 end
 
-
+# N = length(data)
+# n = length(batch)
+# N/n *  gll(c,batch) + glpr(c)
+# is an unbiased estimator of glp(c,data)
 
 # function grad_log_posterior!(grad::AbstractArray{T} , m::StatisticalModel, θ::AbstractArray{T}) where {T <:Real}
 #     set_params!(m.model, θ)
