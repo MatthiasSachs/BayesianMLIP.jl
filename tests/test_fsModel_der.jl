@@ -9,8 +9,13 @@ using StaticArrays
 using ACEflux: Linear_ACE, GenLayer
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
 
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4), GenLayer(FS), sum)
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum)
+# fieldnames(typeof(model[1]))
+# model[1].weight
+# model[1].m
 pot = FluxPotential(model, 6.0) 
+
+
 
 ##
 
@@ -19,22 +24,28 @@ pot = FluxPotential(model, 6.0)
 
 @info "dEnergy, dE/dP"
 
-at = bulk(:Cu, cubic=true) * 3
-rattle!(at,0.6) 
+at = bulk(:Cu, cubic=true) * 3;
+rattle!(at,0.6) ;
 
-s = size(pot.model[1].weight);
+s = size(pot.model[1].weight)
 
-function F(c)
+energy(pot, at)      # much faster 
+forces(pot, at)      # much faster 
+
+function F(c)     # c is vector of length 30 
    pot.model[1].weight = reshape(c, s[1], s[2])
    return energy(pot, at)
 end
 
 function dF(c)
    pot.model[1].weight = reshape(c, s[1], s[2])
-   p = Flux.params(model)
+   p = Flux.params(model)  
    dE = Zygote.gradient(()->energy(pot, at), p)
-   return(dE[p[1]])
+   return dE[p[1]]
 end
+
+F(rand(30))
+dF(rand(30))
 
 for _ in 1:1
    c = rand(s[1]*s[2])

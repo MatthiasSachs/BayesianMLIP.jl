@@ -1,25 +1,63 @@
 module NLModels
 
-using ACE 
+using ACE, ACEatoms, Flux, JuLIP, ACEflux
+using ACEflux: FluxPotential
 using ACE: evaluate, val, AbstractConfiguration
-using ACEatoms
-using JuLIP
 import JuLIP: forces, energy
 using NeighbourLists
 using Random: seed!
 using LinearAlgebra: dot
 using Zygote
 using StaticArrays
-using BayesianMLIP.MiniACEflux: FluxPotential
 
-import ACE: set_params!, nparams, params
+import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEModel
 
-export energy, forces,  hamiltonian, kenergy, set_params!, nparams, params
+export energy, forces, Hamiltonian, set_params!, nparams, params, Energy, Forces, gradParams
 
+function get_params!(pot) 
+    return pot.model[1].weight
+end 
 
-import ACE: evaluate, LinearACEModel, AbstractACEModel
+function set_params!(pot, params) 
+    s1, s2 = size(pot.model[1].weight)
+    if length(params) != s1 * s2 
+       throw(error("Length does not match parameters of model: $(s1*s2)"))
+    end  
+    pot.model[1].weight = reshape(params, s1, s2)
+end 
 
+function Energy(pot, at::AbstractAtoms; θ=nothing)     # Energy: value of potential
+    if θ === nothing 
+        return JuLIP.energy(pot, at)
+    else 
+        set_params!(pot, θ)
+        return JuLIP.energy(pot, at)
+    end 
+end 
 
+function Forces(pot, at::AbstractAtoms; θ=nothing)     # Force: gradient of potential w.r.t. configuration
+    if θ === nothing 
+        DState_vec = JuLIP.forces(pot, at)
+        return [elem.rr for elem in DState_vec]
+    else 
+        set_params!(pot, θ) 
+        DState_vec = JuLIP.forces(pot, at)
+        return [elem.rr for elem in DState_vec] 
+    end 
+end 
+
+function gradParams(pot, at::AbstractAtoms, θ)       # gradient of potential w.r.t. parameters
+    s = size(pot.model[1].weight)
+    pot.model[1].weight = reshape(θ, s[1], s[2])
+    p = Flux.params(pot.model)  
+    dE = Zygote.gradient(()->Energy(pot, at), p)
+    return dE[p[1]]
+end
+
+function Hamiltonian(pot, at::AbstractAtoms) 
+    KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
+    return energy(pot, at) + KE
+end 
 
 
 mat2svecs(M::AbstractArray{T}, nc::Int) where {T} =   
@@ -81,17 +119,6 @@ pack(::CombPotential, c1::AbstractArray{T}, c2::AbstractArray{T}) where T<:Numbe
 pack(::CombPotential, c1::AbstractVector{<: SVector{N, T}}, c2::AbstractVector{<: SVector{N, T}}) where {N, T} = cat(svecs2vec(c1), svecs2vec(c2), dims=1)
 unpack(calc::CombPotential, c12::AbstractArray{T})  where T<:Number = mat2svecs(c12[1:(_nc(calc.m1)*ACE.nparams(calc.m1))],_nc(calc.m1)),  mat2svecs(c12[(_nc(calc.m2)*ACE.nparams(calc.m2)+1):end],_nc(calc.m2))
 
-
-
-function kenergy(at::Atoms)
-    return 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
-end
-
-function hamiltonian(V, at::Atoms) 
-    # Wish we would directly call this on outp, but this would require outp to store 
-    # entire at object rather than at.X and at.P
-    return energy(V, at) + kenergy(at::Atoms)
-end 
 
 
 # FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, rcut::T) where {T<:Real} = FSModel(model1::ACE.LinearACEModel, model2::ACE.LinearACEModel, props ->  (1 .+ val.(props).^2).^0.5, rcut::T) 

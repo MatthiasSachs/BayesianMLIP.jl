@@ -7,7 +7,10 @@ using ACEbase
 
 using ACEflux: Linear_ACE
 #model = Chain(Linear_ACE(2, 7, 4), Dense(4, 3, σ), Dense(3, 1), sum)
+σ
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 4,  Nprop=4), Dense(4, 3, σ), Dense(3, 1), sum)
+
+
 
 pot = FluxPotential(model, 5.0) #model, cutoff
 

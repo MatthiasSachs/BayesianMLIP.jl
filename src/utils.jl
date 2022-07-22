@@ -8,7 +8,8 @@ using BayesianMLIP.NLModels
 
 using Flux, FluxOptTools, Zygote, ACEflux
 
-export animation, StatisticalModel, log_posterior
+export animation, StatisticalModel, log_posterior, gll, glp, log_likelihood, params
+
 
 mutable struct StatisticalModel 
     log_likelihood
@@ -75,23 +76,6 @@ end
 
 
 
-# function grad_log_posterior!(grad::AbstractArray{T} , m::StatisticalModel, θ::AbstractArray{T}) where {T <:Real}
-#     set_params!(m.model, θ)
-#     p = Flux.params(m.model)
-#     print(nparams(m))
-#     dL = Zygote.gradient(()->log_posterior(m), p)
-#     copy!(grad, dL)
-# end
-
-# function grad_log_posterior(m::StatisticalModel, θ::AbstractArray{T}) where {T <:Real}
-#     grad = zeros( nparams(m))
-#     grad_log_posterior!(grad, m, θ)
-#     return grad
-# end
-
-
-
-
 
 # Wrapper functions for FluxPotentials
 nparams(pot::FluxPotential) = nparams(pot.model)
@@ -138,21 +122,5 @@ function animation(outp::atoutp ; name::String="anim", trace=false)
     gif(anim, "$(name).mp4", fps=200)
 end
 
-
-
-
-
-# using Plots
-# x=-1.0:1.0:1.0
-# y=-10.0:1.0:10.0
-
-# function log_post(x::Float64, y::Float64) 
-#     test = true_θ 
-#     test[1] = x 
-#     test[2] = y
-#     return U(statModel, test)
-# end 
-
-# surface(x,y,log_post)
 
 end 
