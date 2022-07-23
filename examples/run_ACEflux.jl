@@ -49,19 +49,15 @@ sm = StatisticalModel(
 );
 
 using BayesianMLIP.Utils: get_glp, get_glpr, get_gll
+using BayesianMLIP.NLModels: get_params, nparams
 gll = get_gll(sm)
 glpr = get_glpr(sm)
 glp = get_glp(sm)
 
 
-c = zeros(Flux.params(sm.model))
-c =rand(length(c))
+c =rand(length(get_params(pot)))
 
 gll(c,data[2])
 n = 50
 g = glp(c,data)
-
-
-
-
 

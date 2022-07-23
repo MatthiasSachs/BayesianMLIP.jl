@@ -1,7 +1,7 @@
 module NLModels
 
 using ACE, ACEatoms, Flux, JuLIP, ACEflux
-using ACEflux: FluxPotential
+import ACEflux: FluxPotential
 using ACE: evaluate, val, AbstractConfiguration
 import JuLIP: forces, energy
 using NeighbourLists
@@ -11,14 +11,18 @@ using Zygote
 using StaticArrays
 
 import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEModel
+export get_params, nparams, set_params!
+export energy, forces, Hamiltonian, params, Energy, Forces, gradParams
 
-export energy, forces, Hamiltonian, set_params!, nparams, params, Energy, Forces, gradParams
-
-function get_params!(pot) 
+function get_params(pot::FluxPotential) 
     return pot.model[1].weight
 end 
 
-function set_params!(pot, params) 
+function nparams(pot::FluxPotential) 
+    return length(pot.model[1].weight)
+end 
+
+function set_params!(pot::FluxPotential, params) 
     s1, s2 = size(pot.model[1].weight)
     if length(params) != s1 * s2 
        throw(error("Length does not match parameters of model: $(s1*s2)"))
@@ -26,33 +30,13 @@ function set_params!(pot, params)
     pot.model[1].weight = reshape(params, s1, s2)
 end 
 
-function Energy(pot, at::AbstractAtoms; θ=nothing)     # Energy: value of potential
-    if θ === nothing 
-        return JuLIP.energy(pot, at)
-    else 
-        set_params!(pot, θ)
-        return JuLIP.energy(pot, at)
-    end 
-end 
-
-function Forces(pot, at::AbstractAtoms; θ=nothing)     # Force: gradient of potential w.r.t. configuration
-    if θ === nothing 
-        DState_vec = JuLIP.forces(pot, at)
-        return [elem.rr for elem in DState_vec]
-    else 
-        set_params!(pot, θ) 
-        DState_vec = JuLIP.forces(pot, at)
-        return [elem.rr for elem in DState_vec] 
-    end 
-end 
-
-function gradParams(pot, at::AbstractAtoms, θ)       # gradient of potential w.r.t. parameters
-    s = size(pot.model[1].weight)
-    pot.model[1].weight = reshape(θ, s[1], s[2])
-    p = Flux.params(pot.model)  
-    dE = Zygote.gradient(()->Energy(pot, at), p)
-    return dE[p[1]]
-end
+# function gradParams(pot, at::AbstractAtoms, θ)       # gradient of potential w.r.t. parameters
+#     s = size(pot.model[1].weight)
+#     pot.model[1].weight = reshape(θ, s[1], s[2])
+#     p = Flux.params(pot.model)  
+#     dE = Zygote.gradient(()->Energy(pot, at), p)
+#     return dE[p[1]]
+# end
 
 function Hamiltonian(pot, at::AbstractAtoms) 
     KE = 0.5 * sum([dot(at.P[t] /at.M[t], at.P[t]) for t in 1:length(at.P)])
@@ -87,7 +71,7 @@ ACE.set_params!(nlm::NLModel, c::AbstractVector{<: SVector{N, T}}) where {N, T} 
 # This provides the standard interface of setter and getter functions to FluxPotentials
 
 ACE.params(calc::FluxPotential) = params(calc.model)
-ACE.nparams(calc::FluxPotential) = ACE.nparams(calc.model)
+ACE.nparams(calc::ACEflux.FluxPotential) = ACE.nparams(calc.model)
 ACE.set_params!(calc::FluxPotential, c) = ACE.set_params!(calc.model, c)
 _nc(calc::FluxPotential) = _nc(calc.model) # This function makes only sense if model is of type NLModel
 

@@ -68,7 +68,7 @@ mutable struct BAOAB{T} <: LangevinIntegrator where {T <: Real}
     α::T        # Integrator parameters
     ζ::T        # Integrator parameters 
 end
-BAOAB(h::T, V, at::AbstractAtoms; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB(h, Forces(V, at), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))
+BAOAB(h::T, V, at::AbstractAtoms; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB(h, forces(V, at), β, exp(-h *γ ), sqrt( 1.0/β * (1-exp(-2*h*γ))))
 
 B_step!(d::LangevinIntegrator, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_momenta!(at, at.P + hf * d.h * d.F)
 A_step!(d::LangevinIntegrator, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_positions!(at, at.X + hf * d.h * at.P./at.M)
@@ -80,7 +80,7 @@ function step!(s::BAOAB, V, at::AbstractAtoms)
     A_step!(s, at; hf=.5)
     O_step!(s, at)
     A_step!(s, at; hf=.5)
-    s.F = Forces(V, at)
+    s.F = forces(V, at)
     B_step!(s, at; hf=.5)
 end
 
@@ -100,7 +100,7 @@ mutable struct BADODAB{T} <: AdaptiveLangevinIntegrator where {T <: Real}
     ξ::T
 end 
 
-BADODAB(h::T, V, at::AbstractAtoms; β::T=1.0, n::Int64=3*length(at), σG::T=1.0, σA::T=9.0, μ::T=10.0, ξ::T=1.0) where {T<:Real} = BADODAB(h, Forces(V, at), β, n, σG, σA, μ, ξ)
+BADODAB(h::T, V, at::AbstractAtoms; β::T=1.0, n::Int64=3*length(at), σG::T=1.0, σA::T=9.0, μ::T=10.0, ξ::T=1.0) where {T<:Real} = BADODAB(h, forces(V, at), β, n, σG, σA, μ, ξ)
 
 
 B_step!(d::AdaptiveLangevinIntegrator, at::AbstractAtoms; hf::T=1.0) where {T<:Real} = set_momenta!(at, at.P + hf * d.h * (d.F + d.σG * sqrt.(at.M) .* randn(ACE.SVector{3,Float64},length(at))))
@@ -125,7 +125,7 @@ function step!(s::BADODAB, V, at::AbstractAtoms)
 
     D_step!(s, at; hf=.5)
     A_step!(s, at; hf=.5)
-    s.F = Forces(V, at)
+    s.F = forces(V, at)
     B_step!(s, at; hf=.5)
 end
 

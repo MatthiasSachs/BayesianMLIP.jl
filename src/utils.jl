@@ -1,53 +1,58 @@
 module Utils
-using Plots 
+using Plots, ACE
 using Distributions
 using Distributions: logpdf, MvNormal
 using LinearAlgebra 
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
-
 using Flux, FluxOptTools, Zygote, ACEflux
+import BayesianMLIP.NLModels: nparams 
 
-export animation, StatisticalModel, log_posterior, gll, glp, log_likelihood, params
-
+export StatisticalModel, params, nparams
+export log_prior, log_likelihood, log_posterior
 
 mutable struct StatisticalModel 
     log_likelihood
     prior
-    model
+    pot
     data
 end 
 
 function Flux.params(pot::ACEflux.FluxPotential) 
-    return Flux.params(pot.model) 
+    return Flux.params(pot.model)
 end
 
-function Flux.params(s::StatisticalModel) 
-    return Flux.params(s.model) 
+function Flux.params(stm::StatisticalModel) 
+    return Flux.params(stm.pot.model) 
 end
 
-nparams(m::StatisticalModel) = nparams(m.model)
 
-function log_likelihood(m::StatisticalModel)
-    return sum(m.log_likelihood(m.model, d) for d in m.data)
+function log_likelihood(stm::StatisticalModel)
+    # log_likelihood for entire dataset 
+    return sum(stm.log_likelihood(stm.pot, d) for d in stm.data)
 end
 
-# function log_prior(m::StatisticalModel)
-#     return logpdf(m.prior, θ)
-# end
-
-log_posterior(m::StatisticalModel) = sum(m.log_likelihood(m.model, d) for d in m.data) #+ m.log_prior(Flux.params(m.model))
-
-function log_posterior(m::StatisticalModel, θ) 
-    set_params!(m.model, θ)
-    return log_posterior(m)
+function log_prior(stm::StatisticalModel)
+    # logarithm of the prior 
+    θ = reshape(get_params(stm.pot), nparams(stm.pot))
+    return logpdf(stm.prior, θ)
 end
 
-function get_gll(sm::StatisticalModel)
-    function gll(c,d) 
-        set_params!(sm.model,c)
-        p = Flux.params(sm.model)
-        dL = Zygote.gradient(()->sm.log_likelihood(sm.model, d), p)
+# log posterior of Statistical model w/ current θ
+log_posterior(stm::StatisticalModel) = log_likelihood(stm) + log_prior(stm)
+
+function log_posterior(stm::StatisticalModel, θ)
+    # log posterior of stm with chosen θ 
+    set_params!(stm.pot, θ)
+    return log_posterior(stm)
+end
+
+function get_gll(stm::StatisticalModel)
+    # gradient of log likelihood wrt θ
+    function gll(θ,d) 
+        set_params!(stm.pot,θ)
+        p = Flux.params(stm.pot)
+        dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
         gradvec = zeros(p)
         copy!(gradvec,dL)
         return(gradvec)
@@ -55,21 +60,22 @@ function get_gll(sm::StatisticalModel)
     return gll
 end
 
-function get_glpr(sm::StatisticalModel)
-    function glpr(c::AbstractArray{T}) where {T<:Real} 
-        return Zygote.gradient(c->logpdf(sm.prior,c), c)[1]
+function get_glpr(stm::StatisticalModel)
+    # gradient of log prior wrt θ
+    function glpr(θ::AbstractArray{T}) where {T<:Real} 
+        return Zygote.gradient(θ->logpdf(stm.prior,θ), θ)[1]
     end
     return glpr
 end
 
-function get_glp(sm::StatisticalModel)
-    gll, glpr =  get_gll(sm), get_glpr(sm)
+function get_glp(stm::StatisticalModel)
+    gll, glpr =  get_gll(stm), get_glpr(stm)
     return get_glp(gll, glpr)
 end
 
 function get_glp(gll, glpr)
-    function glp(c::AbstractArray, batch)
-        return sum(gll(c,d) for d in batch) + glpr(c)
+    function glp(θ::AbstractArray, batch, total::Int64)
+        return (total/length(batch)) * sum(gll(θ,d) for d in batch) + glpr(θ)
     end
     return glp
 end
