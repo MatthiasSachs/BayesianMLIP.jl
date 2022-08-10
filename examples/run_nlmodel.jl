@@ -13,18 +13,7 @@ using JSON
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 6.0);
-# Don't need to initialize this since it'll be assigned in run, but for testing purposes 
-set_params!(pot, randn(30))         
-
-# Initialize atomic configuration
-at = bulk(:Cu, cubic=true) * 3;
-rattle!(at, 0.1) ;       # If we rattle this too much, the integrators can become unstable
-
-# Testing parameters (NLModels), energy/forces (JuLIP) functions 
-get_params(pot)
-nparams(pot)
-energy(pot, at)
-forces(pot, at)
+# Don't need to initialize this since it'll be assigned in run, but for testing purposes       
 
 function log_likelihood_L1(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(3*length(d.at)) )
     # Compute the log_likelihood for one data point: log P(θ|d)
@@ -32,11 +21,9 @@ function log_likelihood_L1(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(
                      for (g, f) in zip(forces(pot, d.at), d.F))
 end 
 
-
-
 priorNormal = MvNormal(zeros(length(get_params(pot))),I)
 
-Data = getData(JSON.parsefile("./train_test/Cu/training.json")) # 262-vector 
+Data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
 
 
 # Initialize StatisticalModel 
@@ -44,6 +31,8 @@ stm1 = StatisticalModel(log_likelihood_L1, priorNormal, pot, Data);
 log_likelihood(stm1)
 log_prior(stm1)
 log_posterior(stm1)
+
+
 
 
 
