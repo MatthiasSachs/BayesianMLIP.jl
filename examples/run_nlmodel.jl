@@ -15,25 +15,29 @@ model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 6.0);
 # Don't need to initialize this since it'll be assigned in run, but for testing purposes       
 
-function log_likelihood_L1(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(3*length(d.at)) )
+function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(3*length(d.at)) )
     # Compute the log_likelihood for one data point: log P(θ|d)
-    -ωE * abs(d.E - energy(pot, d.at)) -  ωF * sum(sum(abs2, g - f) 
+    -ωE * (d.E - energy(pot, d.at))^2 -  ωF * sum(sum(abs2, g - f) 
                      for (g, f) in zip(forces(pot, d.at), d.F))
 end 
 
-priorNormal = MvNormal(zeros(length(get_params(pot))),I)
+function priorNormal(pot::ACEflux.FluxPotential)
+    GaussianDist = MvNormal(zeros(nparams(pot)),I)
+    return pdf(GaussianDist, reshape(get_params(pot), nparams(pot)))
+end 
+
+function priorUniform(pot::ACEflux.FluxPotential) 
+    return 1.0 
+end 
 
 Data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
 
 
 # Initialize StatisticalModel 
-stm1 = StatisticalModel(log_likelihood_L1, priorNormal, pot, Data); 
+stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, Data); 
 log_likelihood(stm1)
 log_prior(stm1)
 log_posterior(stm1)
-
-
-
 
 
 function saveData() 
@@ -54,14 +58,22 @@ function saveData()
     end 
 end 
 
-info = load("./Run_Data/artificial_data.jld2")
+info = load("./Run_Data/Artificial_Data/artificial_data.jld2")
 info["theta"]
-info["data"]
+info["data"][1:2:500]
 
-st = State_θ(rand(30), zeros(30))
+stm2 = StatisticalModel(log_likelihood_L2, priorNormal, pot, info["data"][1:2:500]) ;
+set_params!(stm2.pot, info["theta"])
+log_likelihood(stm2)
+log_prior(stm2)
+log_posterior(stm2)
+
+st = State_θ(reshape(info["theta"], 30), zeros(30))
 AMHoutp = MHoutp_θ()    # new run 
-AMHsampler = AdaptiveMHsampler(0.01, st, stm1, st.θ, I)     
-Samplers.run!(st, AMHsampler, stm1, 1000, AMHoutp)
+AMHsampler = AdaptiveMHsampler(1e-22, st, stm2, st.θ, I)     
+Samplers.run!(st, AMHsampler, stm2, 3000, AMHoutp)
+plotTrajectory(AMHoutp, 3)
+histogramTrajectory(AMHoutp, 3)
 
 # Save last state, last state of sampler, statistical model, and outp to jld2 file 
 dict = Dict{String, Any}( "description" => :"1000 steps run on Cu Training Data on Adaptive Metropolis Hastings", 

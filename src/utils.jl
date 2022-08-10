@@ -10,9 +10,36 @@ import BayesianMLIP.NLModels: nparams
 
 export StatisticalModel, params, nparams
 export log_prior, log_likelihood, log_posterior
-export get_glp
+export get_glp, get_gll, get_glpr
+export plotTrajectory, histogramTrajectory, plotRejectionRate, plotEigenRatio, plotLogPosterior, plotξ, plotMomenta
 
+function plotTrajectory(outp, index) 
+    plot(1:length(outp.θ), [elem[index] for elem in outp.θ], title="Trajectory Index $index", legend=false)
+end 
 
+function histogramTrajectory(outp, index) 
+    histogram(1:length(outp.θ), [elem[index] for elem in outp.θ], title="Histogram Index $index", bins= :scott)
+end 
+
+function plotMomenta(outp, index) 
+    plot(1:length(outp.θ_prime), [elem[index] for elem in outp.θ_prime], title="Momenta Index $index", legend=false)
+end 
+
+function plotRejectionRate(outp) 
+    plot(1:length(outp.rejection_rate), outp.rejection_rate, title="Rejection Rate", legend=false) 
+end 
+
+function plotEigenRatio(outp) 
+    plot(1:length(outp.eigen_ratio), outp.eigen_ratio, title="Eigenvalue Ratio", legend=false)
+end
+
+function plotLogPosterior(outp) 
+    plot(250:length(outp.log_posterior), outp.log_posterior[250:length(outp.log_posterior)], title="Log-Posterior Values", legend=false)
+end 
+
+function plotξ(outp) 
+    plot(1:length(outp.ξ), outp.ξ, title="ξ Values", legend=false)
+end 
 
 mutable struct StatisticalModel 
     log_likelihood
@@ -37,8 +64,7 @@ end
 
 function log_prior(stm::StatisticalModel)
     # logarithm of the prior 
-    θ = reshape(get_params(stm.pot), nparams(stm.pot))
-    return logpdf(stm.prior, θ)
+    return log(stm.prior(stm.pot))
 end
 
 # log posterior of Statistical model w/ current θ
@@ -58,7 +84,7 @@ function get_gll(stm::StatisticalModel)
         dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
         gradvec = zeros(p)
         copy!(gradvec,dL)
-        return(gradvec)
+        return gradvec
     end
     return gll
 end
@@ -115,21 +141,21 @@ end
 
 # animation 
 
-function animation(outp::atoutp ; name::String="anim", trace=false)
-    anim = @animate for t in 1:length(outp.at_traj)
-        frame = outp.at_traj[t].X  
-        XYZ_Coords = [ [point[1] for point in frame], [point[2] for point in frame], [point[3] for point in frame] ]
+# function animation(outp::atoutp ; name::String="anim", trace=false)
+#     anim = @animate for t in 1:length(outp.at_traj)
+#         frame = outp.at_traj[t].X  
+#         XYZ_Coords = [ [point[1] for point in frame], [point[2] for point in frame], [point[3] for point in frame] ]
 
-        if trace == true 
-            scatter!(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
-                    markercolor="black", legend=false)
-        else 
-            scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
-                    markercolor="black", legend=false)
-        end 
-    end
-    gif(anim, "$(name).mp4", fps=200)
-end
+#         if trace == true 
+#             scatter!(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
+#                     markercolor="black", legend=false)
+#         else 
+#             scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
+#                     markercolor="black", legend=false)
+#         end 
+#     end
+#     gif(anim, "$(name).mp4", fps=200)
+# end
 
 
 end 
