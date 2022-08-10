@@ -3,15 +3,37 @@ using ACE
 using JuLIP
 using BayesianMLIP.NLModels
 export simpleoutp, atoutp, outputscheduler, feed!, MHoutp
+export outputscheduler, MHoutp_θ, BAOABoutp_θ, BADODABoutp_θ, atoutp 
 using ACE: val
 abstract type outputscheduler end
 
-struct atoutp <: outputscheduler 
-    at_traj
+mutable struct atoutp <: outputscheduler 
+    θ 
 end 
 atoutp() = atoutp([])
 
+mutable struct MHoutp_θ <: outputscheduler 
+    θ
+    log_posterior 
+    rejection_rate 
+    eigen_ratio
+end 
+MHoutp_θ() = MHoutp_θ([], [], [], []) 
 
+mutable struct BAOABoutp_θ <: outputscheduler
+    θ 
+    θ_prime 
+    log_posterior
+end 
+BAOABoutp_θ() = BAOABoutp_θ([], [], []) 
+
+mutable struct BADODABoutp_θ <: outputscheduler
+    θ 
+    θ_prime 
+    log_posterior
+    ξ
+end 
+BADODABoutp_θ() = BADODABoutp_θ([], [], [], []) 
 
 end # end module 
 

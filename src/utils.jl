@@ -10,6 +10,9 @@ import BayesianMLIP.NLModels: nparams
 
 export StatisticalModel, params, nparams
 export log_prior, log_likelihood, log_posterior
+export get_glp
+
+
 
 mutable struct StatisticalModel 
     log_likelihood

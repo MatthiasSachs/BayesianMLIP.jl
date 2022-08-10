@@ -6,6 +6,7 @@ using Random: seed!, rand
 using LinearAlgebra: dot
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
+import BayesianMLIP.NLModels: Hamiltonian, energy, forces
 
 export run!, step!
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB, BADODAB
@@ -23,7 +24,7 @@ mutable struct VelocityVerlet{T} <: HamiltonianIntegrator where {T <: Real}
     F::Vector{ACE.SVector{3,T}} # force
     h::T                        # step size
 end
-VelocityVerlet(h::Float64, V, at::AbstractAtoms) = VelocityVerlet(Forces(V, at), h)
+VelocityVerlet(h::Float64, V, at::AbstractAtoms) = VelocityVerlet(forces(V, at), h)
 
 mutable struct PositionVerlet{T} <: HamiltonianIntegrator where {T <: Real}
     F::Vector{ACE.SVector{3,T}} # force
@@ -37,7 +38,7 @@ A_step!(d::HamiltonianIntegrator, at::AbstractAtoms; hf::T=1.0) where {T<:Real} 
 function step!(s::VelocityVerlet, V, at::AbstractAtoms) #V::SitePotential (e.g. FSModel)
     B_step!(s, at; hf=.5)
     A_step!(s, at; hf=1.0)
-    s.F = Forces(V, at)
+    s.F = forces(V, at)
     B_step!(s, at; hf=.5)
 end
 
@@ -58,7 +59,7 @@ mutable struct EulerMaruyama{T} <: LangevinIntegrator where {T <: Real}
     β::T    # Inverse temperature
 end
 function step!(d::EulerMaruyama, V, at::AbstractAtoms; hf::T=2.0) where {T}
-    set_positions!(at, at.X + hf * d.h * Forces(V, at)./at.M + sqrt.( hf/d.β * d.h/at.M).*randn(SVector{3,Float64},length(at)))
+    set_positions!(at, at.X + hf * d.h * forces(V, at)./at.M + sqrt.( hf/d.β * d.h * (1 ./ at.M)).*randn(SVector{3,Float64},length(at)))
 end
 
 mutable struct BAOAB{T} <: LangevinIntegrator where {T <: Real}  
@@ -110,12 +111,12 @@ function D_step!(d::AdaptiveLangevinIntegrator, at::AbstractAtoms; hf::T=1.0) wh
 end 
 
 
-function step!(s::BADODAB, V, at::AbstractAtoms) 
+function step!(s::BADODAB, pot, at::AbstractAtoms) 
     B_step!(s, at; hf=.5)
     A_step!(s, at; hf=.5)
     D_step!(s, at; hf=.5)
     
-    if s.ξ == 0.0 
+    if -0.001 < s.ξ < 0.001  
         s.P = s.P + sqrt(s.h) * s.σA * at.M .* randn(ACE.SVector{3,Float64},length(at))
     else 
         α = 1 - exp(-2 * s.ξ * s.h) 
@@ -125,7 +126,7 @@ function step!(s::BADODAB, V, at::AbstractAtoms)
 
     D_step!(s, at; hf=.5)
     A_step!(s, at; hf=.5)
-    s.F = forces(V, at)
+    s.F = forces(pot, at)
     B_step!(s, at; hf=.5)
 end
 
@@ -147,6 +148,9 @@ function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing)
         end
     end 
 end
+
+# Integrators with respect to Parameter θ
+
 
 
 

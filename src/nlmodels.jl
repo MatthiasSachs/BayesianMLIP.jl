@@ -12,14 +12,10 @@ using StaticArrays
 
 import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEModel
 export get_params, nparams, set_params!
-export energy, forces, Hamiltonian, params, Energy, Forces, gradParams
+export energy, forces, Hamiltonian, params, gradParams
 
 function get_params(pot::FluxPotential) 
     return pot.model[1].weight
-end 
-
-function nparams(pot::FluxPotential) 
-    return length(pot.model[1].weight)
 end 
 
 function set_params!(pot::FluxPotential, params) 
