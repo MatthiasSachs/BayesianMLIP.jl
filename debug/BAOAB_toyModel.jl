@@ -4,7 +4,7 @@ using BayesianMLIP.MiniACEflux, BayesianMLIP.Utils, BayesianMLIP.Samplers, Bayes
 using ACEflux: FluxPotential
 import Distributions: logpdf, MvNormal
 using JSON
-
+using Flux
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);

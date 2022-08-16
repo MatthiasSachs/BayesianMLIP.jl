@@ -64,7 +64,7 @@ end
 
 function log_prior(stm::StatisticalModel)
     # logarithm of the prior 
-    return log(stm.prior(stm.pot))
+    return  log(stm.prior(stm.pot))
 end
 
 # log posterior of Statistical model w/ current θ
@@ -83,7 +83,9 @@ function get_gll(stm::StatisticalModel)
         p = Flux.params(stm.pot)
         dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
         gradvec = zeros(p)
-        copy!(gradvec,dL)
+        if all(dL[p]  !== nothing for p in dL.params)
+            copy!(gradvec,dL) 
+        end
         return gradvec
     end
     return gll
