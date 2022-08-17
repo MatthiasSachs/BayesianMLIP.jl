@@ -57,9 +57,48 @@ function Flux.params(stm::StatisticalModel)
 end
 
 
+
+function get_ll(stm::StatisticalModel)
+    if stm.log_likelihood !== nothing
+        function ll(θ,d) 
+            set_params!(stm.pot,θ)
+            return stm.log_likelihood(stm.pot, d)
+        end
+    else
+        ll = (θ,d)  -> 0.0
+    end
+    return ll
+end
+
+function get_lpr(stm::StatisticalModel)
+    function lpr(θ) 
+        return logpdf(stm.prior, θ)
+    end
+    return pr
+end
+
+function get_lp(stm::StatisticalModel)
+    ll, lpr =  get_ll(stm), get_lpr(stm)
+    return get_lp(ll, lpr)
+end
+
+function get_lp(stm::StatisticalModel)
+    ll, lpr =  get_ll(stm), get_lpr(stm)
+    return get_lp(ll, lpr)
+end
+
+function get_lp(ll, lpr)
+    function lp(θ::AbstractArray, batch, total::Int64)
+        return (total/length(batch)) * sum(ll(θ,d) for d in batch) + lpr(θ)
+    end
+    return lp
+end
+
+
+
 function log_likelihood(stm::StatisticalModel)
     # log_likelihood for entire dataset 
-    return sum(stm.log_likelihood(stm.pot, d) for d in stm.data)
+    return (stm.log_likelihood === nothing ? 0.0 : sum(stm.log_likelihood(stm.pot, d) for d in stm.data))
 end
 
 function log_prior(stm::StatisticalModel)
@@ -81,9 +120,9 @@ function get_gll(stm::StatisticalModel)
     function gll(θ,d) 
         set_params!(stm.pot,θ)
         p = Flux.params(stm.pot)
-        dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
         gradvec = zeros(p)
-        if all(dL[p]  !== nothing for p in dL.params)
+        if stm.log_likelihood !== nothing
+            dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
             copy!(gradvec,dL) 
         end
         return gradvec
