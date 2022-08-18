@@ -117,7 +117,7 @@ function run!(st::State_θ, s::BAOAB_θ, stm::StatisticalModel, Nsteps::Int64, o
         step!(st, s, stm) 
         push!(outp.θ, st.θ)
         push!(outp.θ_prime, st.θ_prime)
-        x = log_posterior(stm)
+        x = s.glp(st.θ, stm.data, length(stm.data))
         push!(outp.log_posterior, x)
 
         println(x)        # print log_posterior value 

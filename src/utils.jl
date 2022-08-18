@@ -7,11 +7,10 @@ using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
 using Flux, FluxOptTools, Zygote, ACEflux
 import BayesianMLIP.NLModels: nparams 
-using Distributed, ThreadsX
 
 export StatisticalModel, params, nparams
 export log_prior, log_likelihood, log_posterior
-export get_glp, get_gll, get_glpr
+export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export plotTrajectory, histogramTrajectory, plotRejectionRate, plotEigenRatio, plotLogPosterior, plotξ, plotMomenta
 
 function plotTrajectory(outp, index) 
@@ -36,12 +35,17 @@ end
 
 
 
-mutable struct StatisticalModel 
-    log_likelihood
-    prior
-    pot
+mutable struct StatisticalModel{LL,PR,POT} 
+    log_likelihood::LL
+    prior::PR
+    pot::POT
     data
 end 
+
+struct ConstantLikelihood end
+
+struct FlatPrior end
+
 
 function Flux.params(pot::ACEflux.FluxPotential) 
     return Flux.params(pot.model)
@@ -54,27 +58,26 @@ end
 
 
 function get_ll(stm::StatisticalModel)
-    if stm.log_likelihood !== nothing
-        function ll(θ,d) 
-            set_params!(stm.pot,θ)
-            return stm.log_likelihood(stm.pot, d)
-        end
-    else
-        ll = (θ,d)  -> 0.0
+    function ll(θ,d) 
+        set_params!(stm.pot,θ)
+        return stm.log_likelihood(stm.pot, d)
     end
     return ll
 end
 
-function get_lpr(stm::StatisticalModel)
+function get_ll(stm::StatisticalModel{ConstantLikelihood,PR}) where {PR}
+    return (θ,d)  -> 0.0
+end
+
+function get_lpr(stm::StatisticalModel) 
     function lpr(θ) 
         return logpdf(stm.prior, θ)
     end
-    return pr
+    return lpr
 end
 
-function get_lp(stm::StatisticalModel)
-    ll, lpr =  get_ll(stm), get_lpr(stm)
-    return get_lp(ll, lpr)
+function get_lpr(stm::StatisticalModel{LL,FlatPrior}) where {LL}
+    return θ -> 0.0
 end
 
 function get_lp(stm::StatisticalModel)
@@ -91,24 +94,24 @@ end
 
 
 
-function log_likelihood(stm::StatisticalModel)
-    # log_likelihood for entire dataset 
-    return (stm.log_likelihood === nothing ? 0.0 : sum(stm.log_likelihood(stm.pot, d) for d in stm.data))
-end
+# function log_likelihood(stm::StatisticalModel)
+#     # log_likelihood for entire dataset 
+#     return (stm.log_likelihood === nothing ? 0.0 : sum(stm.log_likelihood(stm.pot, d) for d in stm.data))
+# end
 
-function log_prior(stm::StatisticalModel)
-    # logarithm of the prior 
-    return  log(stm.prior(stm.pot))
-end
+# function log_prior(stm::StatisticalModel)
+#     # logarithm of the prior 
+#     return  log(stm.prior(stm.pot))
+# end
 
-# log posterior of Statistical model w/ current θ
-log_posterior(stm::StatisticalModel) = log_likelihood(stm) #+ log_prior(stm)
+# # log posterior of Statistical model w/ current θ
+# log_posterior(stm::StatisticalModel) = log_likelihood(stm) #+ log_prior(stm)
 
-function log_posterior(stm::StatisticalModel, θ)
-    # log posterior of stm with chosen θ 
-    set_params!(stm.pot, θ)
-    return log_posterior(stm)
-end
+# function log_posterior(stm::StatisticalModel, θ)
+#     # log posterior of stm with chosen θ 
+#     set_params!(stm.pot, θ)
+#     return log_posterior(stm)
+# end
 
 function get_gll(stm::StatisticalModel)
     # gradient of log likelihood wrt θ
@@ -116,22 +119,39 @@ function get_gll(stm::StatisticalModel)
         set_params!(stm.pot,θ)
         p = Flux.params(stm.pot)
         gradvec = zeros(p)
-        if stm.log_likelihood !== nothing
-            dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
-            copy!(gradvec,dL) 
-        end
+        dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
+        copy!(gradvec,dL) 
         return gradvec
     end
     return gll
 end
 
-function get_glpr(stm::StatisticalModel)
+
+function get_gll(stm::StatisticalModel{ConstantLikelihood, PR}) where {PR}
+    p = Flux.params(stm.pot)
+    function gll(θ,d) 
+        return zeros(p)
+    end
+    return gll
+end
+
+function get_glpr(stm::StatisticalModel{LL,PR}) where {LL, PR<:Distributions.Sampleable }
     # gradient of log prior wrt θ
     function glpr(θ::AbstractArray{T}) where {T<:Real} 
         return Zygote.gradient(θ->logpdf(stm.prior, θ), θ)[1]
     end
     return glpr
 end
+
+function get_glpr(stm::StatisticalModel{LL,FlatPrior}) where {LL}
+    # gradient of log prior wrt θ
+    p = Flux.params(stm.pot)
+    function glpr(θ::AbstractArray{T}) where {T<:Real} 
+        return zeros(p)
+    end
+    return glpr
+end
+
 
 function get_glp(stm::StatisticalModel)
     gll, glpr =  get_gll(stm), get_glpr(stm)
@@ -171,7 +191,13 @@ function set_params!(model::Chain, c::AbstractArray{T}) where {T <: Real}
 end
 
 
-
+function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
+    # Only works for FS-type models (i.e., exactly only the first layer is of type Linear_ACE; and no other layers have parameters)
+    linear_ace_layer = pot.model.layers[1]
+    scaling = ACE.scaling(linear_ace_layer.m.basis,p)
+    scaling[1] = 1.0
+    return  Diagonal(cat(scaling, rel_scaling * scaling, dims=1))
+end
 
 
 # animation 
