@@ -11,10 +11,10 @@ using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 6.0);
 # Don't need to initialize this since it'll be assigned in run, but for testing purposes 
-set_params!(pot, randn(30))         
+set_params!(pot, randn(nparams(pot)))         
 
 # Initialize atomic configuration
 at = bulk(:Cu, cubic=true) * 3;
@@ -49,14 +49,14 @@ plot(1:length(BADODABsteps), [Hamiltonian(pot, elem) for elem in BADODABsteps], 
 function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::String) 
     # Initialize pot with random parameters 
     _FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
-    _model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(_FS), sum);
+    _model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(_FS), sum);
     _pot = ACEflux.FluxPotential(_model, 6.0);
-    θ = randn(30)
+    θ = randn(nparams(_pot))
     set_params!(_pot, θ)
 
     data = [] 
     for i in 1:Ndata 
-        run!(sampler, _pot, _at, 1000; outp=nothing) 
+        Dynamics.run!(sampler, _pot, _at, 1000; outp=nothing) 
         # push data (without Gaussian noise for now) 
         Energy = energy(_pot, _at) 
         Forces = forces(_pot, _at) 
@@ -68,6 +68,9 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
     Data = data 
 
     dict = Dict{String, Any}("theta" => Theta, "data"  => Data)
-    save("artificial_data/" * filename * ".jld2", dict)
+    save("./Run_Data/Artificial_Data/" * filename * ".jld2", dict)
     return (Theta, Data) 
 end 
+
+# generate_data(5, BAOAB_Sampler, at, "artificial_data2")
+

@@ -4,10 +4,11 @@ using BayesianMLIP.NLModels
 using BayesianMLIP.Utils
 # using BayesianMLIP.MiniACEflux: FluxPotential
 using LinearAlgebra
+using LinearAlgebra: norm
 using BayesianMLIP.Outputschedulers
 
 export BAOSplitting, MHsampler, SimpleMHsamplers
-export State_θ, BAOAB_θ, BADODAB_θ, run! 
+export State_θ, BAOAB_θ, BADODAB_θ, SGLD_θ, run! 
 export SimpleMHsampler, AdaptiveMHsampler, step!, run!
 
 mutable struct State_θ
@@ -19,6 +20,45 @@ abstract type sampler end
 abstract type BAOSplitting <: sampler end 
 abstract type MHsampler <: sampler end 
 
+
+mutable struct SGLD_θ <: sampler 
+    h::Float64 
+    F::Vector{Float64}
+    β::Float64 
+    mb_size::Int64
+    glp
+end 
+SGLD_θ(h::Float64, state::State_θ, stm::StatisticalModel, mb_size::Int64 ; β::Float64=1.0) = SGLD_θ(h, get_glp(stm)(state.θ, [stm.data[i] for i in sample(1:length(stm.data), mb_size, replace = false)], length(stm.data)), β, mb_size, get_glp(stm))
+
+function step!(st::State_θ, s::SGLD_θ, stm::StatisticalModel)
+    st.θ = st.θ + s.h * s.F + sqrt(2 * s.h / s.β) * randn(length(st.θ))
+    s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data))
+end 
+
+function run!(st::State_θ, s::SGLD_θ, stm::StatisticalModel, Nsteps::Int64, outp)
+    
+    # print first log_posterior value out 
+    x = log_posterior(stm)
+    push!(outp.log_posterior, x)
+    force_norm = norm(s.F)
+    println("0) $x   ($force_norm)")
+
+    for i in 1:Nsteps 
+        first = st.θ
+        step!(st, s, stm) 
+        force_norm = norm(s.F)
+        push!(outp.θ, st.θ)
+
+        x = log_posterior(stm)
+        push!(outp.log_posterior, x)
+
+        step_diff = norm(st.θ - first)
+
+        println("$i) $x   ($force_norm)  ($step_diff)")        # print log_posterior value 
+    end 
+end 
+
+
 mutable struct BAOAB_θ <: BAOSplitting
     h::Float64      # Step size
     F::Vector{Float64}
@@ -28,6 +68,16 @@ mutable struct BAOAB_θ <: BAOSplitting
     glp
 end 
 BAOAB_θ(h::T, state::State_θ, stm::StatisticalModel, mb_size::Int64 ; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB_θ(h, get_glp(stm)(state.θ, [stm.data[i] for i in sample(1:length(stm.data), mb_size, replace = false)], length(stm.data)), β, γ, mb_size, get_glp(stm))
+
+function step!(st::State_θ, s::BAOAB_θ, stm::StatisticalModel) 
+    st.θ_prime += 0.5 * s.h * s.F
+    st.θ += 0.5 * s.h * st.θ_prime 
+    st.θ_prime = exp(-s.h * s.γ) * st.θ_prime + sqrt((1/s.β) * (1 - exp(-2*s.γ*s.h))) * randn(length(st.θ_prime)) 
+    st.θ += 0.5 * s.h * st.θ_prime
+    s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data))
+    st.θ_prime += 0.5 * s.h * s.F
+end 
+
 
 mutable struct BADODAB_θ <: BAOSplitting
     h::Float64 
@@ -41,18 +91,7 @@ mutable struct BADODAB_θ <: BAOSplitting
     mb_size::Int64
     glp 
 end 
-
 BADODAB_θ(h::Float64, state::State_θ, stm::StatisticalModel, mb_size::Int64 ; β=1.0, n=length(state.θ), σG=1.0, σA=1.0, μ=10.0, ξ=1.0) = BADODAB_θ(h, get_glp(stm)(state.θ, [stm.data[i] for i in sample(1:length(stm.data), mb_size, replace = false)], length(stm.data)), β, n, σG, σA, μ, ξ, mb_size, get_glp(stm))
-
-
-function step!(st::State_θ, s::BAOAB_θ, stm::StatisticalModel) 
-    st.θ_prime += 0.5 * s.h * s.F
-    st.θ += 0.5 * s.h * st.θ_prime 
-    st.θ_prime = exp(-s.h * s.γ) * st.θ_prime + sqrt((1/s.β) * (1 - exp(-2*s.γ*s.h))) * randn(length(st.θ_prime)) 
-    st.θ += 0.5 * s.h * st.θ_prime
-    s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data))
-    st.θ_prime += 0.5 * s.h * s.F
-end 
 
 function step!(st::State_θ, s::BADODAB_θ, stm::StatisticalModel) 
     st.θ_prime += 0.5 * s.h * (s.F + s.σG .* randn(length(st.θ)))

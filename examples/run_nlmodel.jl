@@ -1,4 +1,4 @@
-using ACE, ACEatoms, Plots, ACEflux, Flux, Zygote, LinearAlgebra, JLD2, JuLIP, StaticArrays, Distributions
+using ACE, ACEatoms, Plots, ACEflux, Flux, Zygote, LinearAlgebra, JLD2, JuLIP, StaticArrays
 import StatsBase: sample
 using BayesianMLIP, BayesianMLIP.NLModels, BayesianMLIP.Dynamics  
 using BayesianMLIP.MiniACEflux, BayesianMLIP.Utils, BayesianMLIP.Samplers, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser
@@ -11,9 +11,13 @@ using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
-pot = ACEflux.FluxPotential(model, 6.0);
-# Don't need to initialize this since it'll be assigned in run, but for testing purposes       
+model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
+pot = ACEflux.FluxPotential(model, 6.0); 
+
+basis = Linear_ACE(;ord = 2, maxdeg =4, Nprop = 2).m.basis
+scaling = ACE.scaling(basis, 2)
+
+
 
 function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(3*length(d.at)) )
     # Compute the log_likelihood for one data point: log P(θ|d)
@@ -21,78 +25,71 @@ function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(
                      for (g, f) in zip(forces(pot, d.at), d.F))
 end 
 
-function priorNormal(pot::ACEflux.FluxPotential)
-    GaussianDist = MvNormal(zeros(nparams(pot)),I)
-    return pdf(GaussianDist, reshape(get_params(pot), nparams(pot)))
+function log_likelihood_0(pot::ACEflux.FluxPotential, d)
+    return 0.0 
 end 
 
-function priorUniform(pot::ACEflux.FluxPotential) 
-    return 1.0 
-end 
+priorNormal = MvNormal(zeros(nparams(pot)),I)
 
-Data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
+priorUniform =  1.0         # how to create distribution object? 
 
+# real data 
+real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
+
+# artificial data 
+info = load("./Run_Data/Artificial_Data/artificial_data2.jld2")
+artificial_data = info["data"][1:end]
+true_θ = () -> load("./Run_Data/Artificial_Data/artificial_data2.jld2")["theta"]
 
 # Initialize StatisticalModel 
-stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, Data); 
+stm1 = StatisticalModel(log_likelihood_L2, priorNormal, pot, artificial_data); 
+
+set_params!(stm1.pot, zeros(nparams(stm1.pot)))
+@time log_likelihood(stm1)
+@time log_prior(stm1)
+@time log_posterior(stm1)
+
+set_params!(stm1.pot, true_θ())
+
 log_likelihood(stm1)
 log_prior(stm1)
 log_posterior(stm1)
 
 
-function saveData() 
-    Threads.@threads for i in 4:9 
-        st = State_θ(rand(30), zeros(30))
-        AMHoutp = MHoutp_θ()    # new run 
-        AMHsampler = AdaptiveMHsampler(0.01, st, stm1, st.θ, I)     
-        Samplers.run!(st, AMHsampler, stm1, 1000, AMHoutp)
+# SLGD Sampler 
+true_θ()
+st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+SGLDoutp = SGLDoutp_θ() 
+SGLDsampler = SGLD_θ(1e-7, st, stm1, 1; β=1.) ;
+Samplers.run!(st, SGLDsampler, stm1, 30000, SGLDoutp) 
+Trajectory(SGLDoutp)
 
-        # Save last state, last state of sampler, statistical model, and outp to jld2 file 
-        dict = Dict{String, Any}( "description" => :"1000 steps run on Cu Training Data on Adaptive Metropolis Hastings", 
-                                "state" => st, 
-                                "sampler" => AMHsampler, 
-                                "stm" => stm1, 
-                                "outp" => AMHoutp)
+plotTrajectory(SGLDoutp, 3)
+histogramTrajectory(SGLDoutp, 4)
+plotLogPosterior(SGLDoutp)
 
-        save("./Run_Data/AMH_Cu_Training$i/AMH_Cu_Training$i-1000.jld2", dict)
-    end 
-end 
 
-info = load("./Run_Data/Artificial_Data/artificial_data.jld2")
-info["theta"]
-info["data"][1:2:500]
-
-stm2 = StatisticalModel(log_likelihood_L2, priorNormal, pot, info["data"][1:2:500]) ;
-set_params!(stm2.pot, info["theta"])
-log_likelihood(stm2)
-log_prior(stm2)
-log_posterior(stm2)
-
-st = State_θ(reshape(info["theta"], 30), zeros(30))
+# AMH Sampler 
+st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
 AMHoutp = MHoutp_θ()    # new run 
-AMHsampler = AdaptiveMHsampler(1e-22, st, stm2, st.θ, I)     
-Samplers.run!(st, AMHsampler, stm2, 3000, AMHoutp)
-plotTrajectory(AMHoutp, 3)
-histogramTrajectory(AMHoutp, 3)
+AMHsampler = AdaptiveMHsampler(0.03, st, stm1, st.θ, I)     
+Samplers.run!(st, AMHsampler, stm1, 50000, AMHoutp)
+
+Histogram(AMHoutp)
+Trajectory(AMHoutp)
+Summary(AMHoutp)
+
 
 # Save last state, last state of sampler, statistical model, and outp to jld2 file 
-dict = Dict{String, Any}( "description" => :"1000 steps run on Cu Training Data on Adaptive Metropolis Hastings", 
+dict = Dict{String, Any}( "description" => :"10000 AMH steps run on Artificial Data [1:2:500] initialized at mode", 
                           "state" => st, 
                           "sampler" => AMHsampler, 
                           "stm" => stm1, 
-                          "outp" => AMHoutp)
-
-save("./Run_Data/AMH_Cu_Training3/AMH_Cu_Training3-1000.jld2", dict) 
-
-info1 = load("./Run_Data/AMH_Cu_Training1/AMH_Cu_Training1-1081.jld2")
-outp1 = info1["outp"]
-
-plotLogPosterior(outp1)
-
-info2 = load("./Run_Data/AMH_Cu_Training2/AMH_Cu_Training2-1000.jld2")
+                          "outp" => AMHoutp, 
+                          "results" => "Step size too small and acceptance rate too large. ")
 
 
-
+save("./Run_Data/Artificial_Data/AdaptiveMetropolisHastings/AMH_4.jld2", dict) 
 
 # Construct sampler and run
 info = load("./Run_Data/AMH_Cu_Training1/AMH_Cu_Training1-1081.jld2")
