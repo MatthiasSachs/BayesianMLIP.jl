@@ -4,20 +4,22 @@ using BayesianMLIP.MiniACEflux, BayesianMLIP.Utils, BayesianMLIP.Samplers, Bayes
 using ACEflux: FluxPotential
 import Distributions: logpdf, MvNormal
 using JSON
-
+using Flux
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 6.0); 
 
 # Initialize log-likelihood to be 0
-log_likelihood_toy = (pot::ACEflux.FluxPotential, d) -> -0.0
+log_likelihood_toy = nothing
+# (pot::ACEflux.FluxPotential, d) -> -0.0
 
 # Set prior to be Gaussian with some arbitrary Sigma 
 X = rand(30, 30)
 Sigma = X' * X
 priorNormal_toy = MvNormal(zeros(30), Sigma)
 
+get_glpr(stm::StatisticalModel)
 # Generate dummy dataset 
 Data = zeros(100)
 

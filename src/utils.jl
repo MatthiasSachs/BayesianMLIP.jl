@@ -12,70 +12,27 @@ using Distributed, ThreadsX
 export StatisticalModel, params, nparams
 export log_prior, log_likelihood, log_posterior
 export get_glp, get_gll, get_glpr
-export Histogram, Trajectory, Summary
-export log_likelihood_parallel
+export plotTrajectory, histogramTrajectory, plotRejectionRate, plotEigenRatio, plotLogPosterior, plotξ, plotMomenta
 
-
-function Histogram(outp) 
-    i = [1, 2, 3, 4]
-    true_vals = outp.θ[1] 
-
-    l = @layout [a b ; c d]
-    
-    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[1]]], seriestype="vline", color="red")
-
-    p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[2]]], seriestype="vline", color="red")
-
-    p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[3]]], seriestype="vline", color="red")
-
-    p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[4]]], seriestype="vline", color="red")
-
-    plot(p1, p2, p3, p4, layout=l)
-
-    # plot(O, layout=4, legend=false)
-    # histogram(O, layout=4, legend=false)
+function plotTrajectory(outp, index) 
+    plot(1:length(outp.θ), [elem[index] for elem in outp.θ], title="Trajectory Index $index", legend=false)
 end 
 
-function Trajectory(outp) 
-    len = length(outp.θ)
-
-    i = [1, 2, 3, 4]
-    true_vals = outp.θ[1] 
-
-    l = @layout [a b ; c d]
-    
-    p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[1]]], seriestype="hline", color="red")
-
-    p2 = plot([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[2]]], seriestype="hline", color="red")
-
-    p3 = plot([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[3]]], seriestype="hline", color="red")
-
-    p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[4]]], seriestype="hline", color="red")
-
-    plot(p1, p2, p3, p4, layout=l)
+function histogramTrajectory(outp, index) 
+    histogram(1:length(outp.θ), [elem[index] for elem in outp.θ], title="Histogram Index $index", bins= :scott)
 end 
 
-function Summary(outp) 
-    len = length(outp.θ)
-    l = @layout [a b ; c ] 
-
-    p1 = plot(1 .- outp.rejection_rate, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-
-    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-
-    p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([outp.log_posterior[1]], seriestype="hline", color="red")
-
-    plot(p1, p2, p3, layout=l) 
+function plotMomenta(outp, index) 
+    plot(1:length(outp.θ_prime), [elem[index] for elem in outp.θ_prime], title="Momenta Index $index", legend=false)
 end 
+
+function plotRejectionRate(outp) 
+    plot(1:length(outp.rejection_rate), outp.rejection_rate, title="Rejection Rate", legend=false) 
+end 
+
+function plotEigenRatio(outp) 
+    plot(1:length(outp.eigen_ratio), outp.eigen_ratio, title="Eigenvalue Ratio", legend=false)
+end
 
 
 
@@ -95,16 +52,53 @@ function Flux.params(stm::StatisticalModel)
 end
 
 
+
+function get_ll(stm::StatisticalModel)
+    if stm.log_likelihood !== nothing
+        function ll(θ,d) 
+            set_params!(stm.pot,θ)
+            return stm.log_likelihood(stm.pot, d)
+        end
+    else
+        ll = (θ,d)  -> 0.0
+    end
+    return ll
+end
+
+function get_lpr(stm::StatisticalModel)
+    function lpr(θ) 
+        return logpdf(stm.prior, θ)
+    end
+    return pr
+end
+
+function get_lp(stm::StatisticalModel)
+    ll, lpr =  get_ll(stm), get_lpr(stm)
+    return get_lp(ll, lpr)
+end
+
+function get_lp(stm::StatisticalModel)
+    ll, lpr =  get_ll(stm), get_lpr(stm)
+    return get_lp(ll, lpr)
+end
+
+function get_lp(ll, lpr)
+    function lp(θ::AbstractArray, batch, total::Int64)
+        return (total/length(batch)) * sum(ll(θ,d) for d in batch) + lpr(θ)
+    end
+    return lp
+end
+
+
+
 function log_likelihood(stm::StatisticalModel)
     # log_likelihood for entire dataset 
-    # return sum(stm.log_likelihood(stm.pot, d) for d in stm.data)
-    # return sum(Distributed.pmap(d ->  stm.log_likelihood(stm.pot, d), stm.data; distributed=false))
-    return sum(ThreadsX.map(d ->  stm.log_likelihood(stm.pot, d), stm.data))
+    return (stm.log_likelihood === nothing ? 0.0 : sum(stm.log_likelihood(stm.pot, d) for d in stm.data))
 end
 
 function log_prior(stm::StatisticalModel)
     # logarithm of the prior 
-    return logpdf(stm.prior, reshape(get_params(stm.pot), nparams(stm.pot))) 
+    return  log(stm.prior(stm.pot))
 end
 
 # log posterior of Statistical model w/ current θ
@@ -121,9 +115,11 @@ function get_gll(stm::StatisticalModel)
     function gll(θ,d) 
         set_params!(stm.pot,θ)
         p = Flux.params(stm.pot)
-        dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
         gradvec = zeros(p)
-        copy!(gradvec,dL)
+        if stm.log_likelihood !== nothing
+            dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
+            copy!(gradvec,dL) 
+        end
         return gradvec
     end
     return gll
