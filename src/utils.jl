@@ -7,31 +7,95 @@ using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
 using Flux, FluxOptTools, Zygote, ACEflux
 import BayesianMLIP.NLModels: nparams 
+import LinearAlgebra: eigen 
+using ThreadsX
 
 export StatisticalModel, params, nparams
 export log_prior, log_likelihood, log_posterior
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
-export plotTrajectory, histogramTrajectory, plotRejectionRate, plotEigenRatio, plotLogPosterior, plotξ, plotMomenta
+export Histogram, Trajectory, Summary
+export FlatPrior, ConstantLikelihood, get_precon, getmb 
 
-function plotTrajectory(outp, index) 
-    plot(1:length(outp.θ), [elem[index] for elem in outp.θ], title="Trajectory Index $index", legend=false)
+
+function Histogram(outp; save_fig=false) 
+    i = [1, 2, 3, 4]
+    true_vals = outp.θ[1] 
+
+    l = @layout [a b ; c d]
+    
+    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    plot!([true_vals[i[1]]], seriestype="vline", color="red")
+
+    p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    plot!([true_vals[i[2]]], seriestype="vline", color="red")
+
+    p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    plot!([true_vals[i[3]]], seriestype="vline", color="red")
+
+    p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    plot!([true_vals[i[4]]], seriestype="vline", color="red")
+
+    if save_fig == true 
+        plot(p1, p2, p3, p4, layout=l)
+        savefig("./plots/AMH_Hist_1.0_Extended.png")
+    else 
+        plot(p1, p2, p3, p4, layout=l)
+    end 
 end 
 
-function histogramTrajectory(outp, index) 
-    histogram(1:length(outp.θ), [elem[index] for elem in outp.θ], title="Histogram Index $index", bins= :scott)
+function Trajectory(outp; save_fig=false) 
+    len = length(outp.θ)
+
+    i = [1, 2, 3, 4]
+    true_vals = outp.θ[1] 
+
+    l = @layout [a b ; c d]
+    
+    p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!([true_vals[i[1]]], seriestype="hline", color="red")
+
+    p2 = plot([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!([true_vals[i[2]]], seriestype="hline", color="red")
+
+    p3 = plot([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!([true_vals[i[3]]], seriestype="hline", color="red")
+
+    p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!([true_vals[i[4]]], seriestype="hline", color="red")
+
+    
+
+    if save_fig == true 
+        plot(p1, p2, p3, p4, layout=l)
+        savefig("./plots/AMH_Traj_1.0_Extended.png")
+    else 
+        plot(p1, p2, p3, p4, layout=l)
+    end 
 end 
 
-function plotMomenta(outp, index) 
-    plot(1:length(outp.θ_prime), [elem[index] for elem in outp.θ_prime], title="Momenta Index $index", legend=false)
-end 
+function Summary(outp; save_fig=false) 
+    len = length(outp.θ)
+    l = @layout [a b ; c d] 
 
-function plotRejectionRate(outp) 
-    plot(1:length(outp.rejection_rate), outp.rejection_rate, title="Rejection Rate", legend=false) 
-end 
+    p1 = plot(1 .- outp.rejection_rate, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
 
-function plotEigenRatio(outp) 
-    plot(1:length(outp.eigen_ratio), outp.eigen_ratio, title="Eigenvalue Ratio", legend=false)
-end
+    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+
+    p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!([outp.log_posterior[1]], seriestype="hline", color="red")
+
+    p4 = plot(outp.covariance_metric, title="Covariance Metric", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+
+    
+
+    if save_fig == true 
+        plot(p1, p2, p3, p4, layout=l)
+        savefig("./plots/AMH_Summ_1.0_Extended.png")
+    else 
+        plot(p1, p2, p3, p4, layout=l)
+    end 
+      
+end 
 
 
 
@@ -87,31 +151,11 @@ end
 
 function get_lp(ll, lpr)
     function lp(θ::AbstractArray, batch, total::Int64)
-        return (total/length(batch)) * sum(ll(θ,d) for d in batch) + lpr(θ)
+        return (total/length(batch)) * sum(ThreadsX.map(d -> ll(θ,d), batch)) + lpr(θ)
     end
     return lp
 end
 
-
-
-# function log_likelihood(stm::StatisticalModel)
-#     # log_likelihood for entire dataset 
-#     return (stm.log_likelihood === nothing ? 0.0 : sum(stm.log_likelihood(stm.pot, d) for d in stm.data))
-# end
-
-# function log_prior(stm::StatisticalModel)
-#     # logarithm of the prior 
-#     return  log(stm.prior(stm.pot))
-# end
-
-# # log posterior of Statistical model w/ current θ
-# log_posterior(stm::StatisticalModel) = log_likelihood(stm) #+ log_prior(stm)
-
-# function log_posterior(stm::StatisticalModel, θ)
-#     # log posterior of stm with chosen θ 
-#     set_params!(stm.pot, θ)
-#     return log_posterior(stm)
-# end
 
 function get_gll(stm::StatisticalModel)
     # gradient of log likelihood wrt θ
@@ -150,7 +194,7 @@ function get_glpr(stm::StatisticalModel{LL,FlatPrior}) where {LL}
         return zeros(p)
     end
     return glpr
-end
+end 
 
 
 function get_glp(stm::StatisticalModel)
@@ -166,6 +210,18 @@ function get_glp(gll, glpr)
 end
 
 
+# Get batch of size mbsize 
+
+function getmb(data, mbsize) 
+    return [data[i] for i in sample(1:length(data), mbsize, replace = false)]
+end 
+
+struct eigen_arr values end 
+
+# eigen function for compatibility with UniformScaling 
+function eigen(A)
+    return eigen_arr([1, 1])
+end 
 
 # Wrapper functions for FluxPotentials
 nparams(pot::FluxPotential) = nparams(pot.model)
@@ -198,6 +254,7 @@ function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
     scaling[1] = 1.0
     return  Diagonal(cat(scaling, rel_scaling * scaling, dims=1))
 end
+
 
 
 # animation 

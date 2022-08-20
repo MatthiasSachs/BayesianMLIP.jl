@@ -10,13 +10,15 @@ import Distributions: logpdf, MvNormal
 using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
-FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
+# FS(ϕ) = ϕ[1]
+# model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 1), GenLayer(FS), sum);
+
+FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
 model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
-pot = ACEflux.FluxPotential(model, 6.0); 
+pot = ACEflux.FluxPotential(model, 3.0); 
 
-basis = Linear_ACE(;ord = 2, maxdeg =4, Nprop = 2).m.basis
-scaling = ACE.scaling(basis, 2)
-
+# basis = Linear_ACE(;ord = 2, maxdeg =4, Nprop = 2).m.basis
+# scaling = ACE.scaling(basis, 2)
 
 
 function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(3*length(d.at)) )
@@ -25,60 +27,59 @@ function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = 1.0/(
                      for (g, f) in zip(forces(pot, d.at), d.F))
 end 
 
-function log_likelihood_0(pot::ACEflux.FluxPotential, d)
-    return 0.0 
-end 
+log_likelihood_Null = ConstantLikelihood() 
 
 priorNormal = MvNormal(zeros(nparams(pot)),I)
-
-priorUniform =  1.0         # how to create distribution object? 
+priorUniform = FlatPrior()
 
 # real data 
 real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
 
 # artificial data 
-info = load("./Run_Data/Artificial_Data/artificial_data2.jld2")
+info = load("./Run_Data/Artificial_Data/artificial_data3.jld2")
 artificial_data = info["data"][1:end]
-true_θ = () -> load("./Run_Data/Artificial_Data/artificial_data2.jld2")["theta"]
+true_θ = () -> load("./Run_Data/Artificial_Data/artificial_data3.jld2")["theta"]
 
 # Initialize StatisticalModel 
-stm1 = StatisticalModel(log_likelihood_L2, priorNormal, pot, artificial_data); 
+stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, artificial_data); 
 
-set_params!(stm1.pot, zeros(nparams(stm1.pot)))
-@time log_likelihood(stm1)
-@time log_prior(stm1)
-@time log_posterior(stm1)
-
-set_params!(stm1.pot, true_θ())
-
-log_likelihood(stm1)
-log_prior(stm1)
-log_posterior(stm1)
-
-
-# SLGD Sampler 
-true_θ()
+# SGLD Sampler 
 st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
 SGLDoutp = SGLDoutp_θ() 
 SGLDsampler = SGLD_θ(1e-7, st, stm1, 1; β=1.) ;
 Samplers.run!(st, SGLDsampler, stm1, 30000, SGLDoutp) 
-Trajectory(SGLDoutp)
 
-plotTrajectory(SGLDoutp, 3)
-histogramTrajectory(SGLDoutp, 4)
-plotLogPosterior(SGLDoutp)
+Histogram(SGLDoutp)
+Trajectory(SGLDoutp)
+Summary(SGLDoutp)
+
+lpr = get_lpr(stm1) 
+ll = get_ll(stm1) 
+lp = get_lp(stm1)
+
+lpr(reshape(true_θ(), 4))
+sum([ll(reshape(true_θ(),4), d) for d in stm1.data])
+lp(reshape(true_θ(), 4), stm1.data, length(stm1.data))
 
 
 # AMH Sampler 
-st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
-AMHoutp = MHoutp_θ()    # new run 
-AMHsampler = AdaptiveMHsampler(0.03, st, stm1, st.θ, I)     
-Samplers.run!(st, AMHsampler, stm1, 50000, AMHoutp)
+st1 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+AMHoutp1 = MHoutp_θ()    
+AMHsampler1 = AdaptiveMHsampler(1.0, st, stm1, st.θ, I) ;    
+Samplers.run!(st, AMHsampler, stm1, 200000, AMHoutp)
 
-Histogram(AMHoutp)
-Trajectory(AMHoutp)
-Summary(AMHoutp)
+st2 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+AMHoutp2 = MHoutp_θ()    
+AMHsampler2 = AdaptiveMHsampler(0.01, st, stm1, st.θ, I) ;    
+Samplers.run!(st, AMHsampler, stm1, 200000, AMHoutp)
 
+Histogram(AMHoutp1)
+Trajectory(AMHoutp1)
+Summary(AMHoutp1)
+
+Histogram(AMHoutp1; save_fig=true)
+Trajectory(AMHoutp1; save_fig=true)
+Summary(AMHoutp1; save_fig=true)
 
 # Save last state, last state of sampler, statistical model, and outp to jld2 file 
 dict = Dict{String, Any}( "description" => :"10000 AMH steps run on Artificial Data [1:2:500] initialized at mode", 

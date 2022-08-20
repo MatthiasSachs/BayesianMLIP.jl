@@ -17,9 +17,8 @@ log_likelihood_toy = nothing
 # Set prior to be Gaussian with some arbitrary Sigma 
 X = rand(30, 30)
 Sigma = X' * X
-priorNormal_toy = MvNormal(zeros(30), Sigma)
+priorNormal_toy = FlatPrior()
 
-get_glpr(stm::StatisticalModel)
 # Generate dummy dataset 
 Data = zeros(100)
 
@@ -27,6 +26,11 @@ Data = zeros(100)
 stm2 = StatisticalModel(log_likelihood_toy, priorNormal_toy, pot, Data); 
 
 # Check that log_likelihood of entire dataset is 0
+log_likelihood(stm2)
+log_prior(stm2)
+log_posterior(stm2)
+
+set_params!(stm2.pot, randn(nparams(stm2.pot)))
 log_likelihood(stm2)
 log_prior(stm2)
 log_posterior(stm2)
@@ -42,4 +46,4 @@ BAOABoutp = BAOABoutp_θ()
 BAOABsampler = BAOAB_θ(0.1, st_toy, stm2, 1; β=1.0, γ=10.0); 
 
 # Running over 5000 steps 
-Samplers.run!(st_toy, BAOABsampler, stm2, 5000, BAOABoutp)
+Samplers.run!(st_toy, BAOABsampler, stm2, 10, BAOABoutp)

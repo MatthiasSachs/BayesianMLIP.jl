@@ -10,11 +10,9 @@ import Distributions: logpdf, MvNormal
 using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
-FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
+FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
 model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
-pot = ACEflux.FluxPotential(model, 6.0);
-# Don't need to initialize this since it'll be assigned in run, but for testing purposes 
-set_params!(pot, randn(nparams(pot)))         
+pot = ACEflux.FluxPotential(model, 3.0);      
 
 # Initialize atomic configuration
 at = bulk(:Cu, cubic=true) * 3;
@@ -48,9 +46,9 @@ plot(1:length(BADODABsteps), [Hamiltonian(pot, elem) for elem in BADODABsteps], 
 
 function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::String) 
     # Initialize pot with random parameters 
-    _FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
+    _FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
     _model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(_FS), sum);
-    _pot = ACEflux.FluxPotential(_model, 6.0);
+    _pot = ACEflux.FluxPotential(_model, 3.0);
     θ = randn(nparams(_pot))
     set_params!(_pot, θ)
 
@@ -72,5 +70,5 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
     return (Theta, Data) 
 end 
 
-# generate_data(5, BAOAB_Sampler, at, "artificial_data2")
+generate_data(10, BAOAB_Sampler, at, "artificial_data3")
 

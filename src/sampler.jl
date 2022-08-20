@@ -148,26 +148,26 @@ end
 # Non-Gradient MCMC Samplers 
 
 mutable struct SimpleMHsampler <: MHsampler 
-    h::Float64  # proposal step size
+    h::Float64 
     log_post_val::Float64 
+    Σ           # covariance matrix (shouldn't be changing)
     n_rejected::Int64
+    lp
 end 
-SimpleMHsampler(h::Float64, st::State_θ, stm::StatisticalModel) = SimpleMHsampler(h, log_posterior(stm, st.θ), 0)
+SimpleMHsampler(h::Float64, st::State_θ, stm::StatisticalModel) = SimpleMHsampler(h, get_lp(stm)(st.θ, stm.data, length(stm.data)), I, 0, get_lp(stm))
 
 function step!(st::State_θ, s::SimpleMHsampler, stm::StatisticalModel) 
-    θ_proposal = rand(MvNormal(st.θ, s.h * I))  # generate proposal 
-    # calculate log_posterior of proposal θ
-    set_params!(stm.pot, θ_proposal) 
-    proposal_log_prob = log_posterior(stm) 
+
+    # Propose a new step and calculate its log posterior (no minibatch)
+    θ_proposal = rand(MvNormal(st.θ, s.h * s.Σ)) 
+    proposal_log_prob = s.lp(θ_proposal, stm.data, length(stm.data)) 
+    
     print(string(s.log_post_val) * " --?--> " * string(proposal_log_prob) * " : ")
 
-    logU = log(rand())      # Uniform[0, 1]
-
-    if logU < min(0, proposal_log_prob - s.log_post_val)       # Accept 
-        st.θ = θ_proposal          # Update to proposed state
-        s.log_post_val = proposal_log_prob     # Update log_posterior value at new θ
-    else logU ≥ min(0, proposal_log_prob - s.log_post_val)     # Reject 
-        # mhsampler.θ = mhsampler.θ       # Keep state the same
+    if log(rand()) < min(0, proposal_log_prob - s.log_post_val) # Accept 
+        st.θ = θ_proposal                                       # Update to proposed state
+        s.log_post_val = proposal_log_prob                      # Update log_posterior value at new θ
+    else                                                        # Reject 
         s.n_rejected += 1 
     end 
 
@@ -175,53 +175,66 @@ function step!(st::State_θ, s::SimpleMHsampler, stm::StatisticalModel)
 end 
 
 mutable struct AdaptiveMHsampler <: MHsampler 
-    h::Float64  # proposal step size 
+    h::Float64 
     log_post_val::Float64 
     μ ::Vector{Float64}
-    Σ 
+    Σ       # covariance matrix 
+    Γ       # shadow covariance matrix 
     t::Int64    # step index 
-    n_rejected::Int64
+    n_rejected::Int64 
+    lp
 end 
-AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, Σ) = AdaptiveMHsampler(h, log_posterior(stm, st.θ), μ, Σ, 1, 0) 
+AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, Σ) = AdaptiveMHsampler(h, get_lp(stm)(st.θ, stm.data, length(stm.data)), μ, Σ, Σ, 1, 0, get_lp(stm)) 
 
 function step!(st::State_θ, s::AdaptiveMHsampler, stm::StatisticalModel) 
-    θ_proposal = rand(MvNormal(st.θ, s.h * s.Σ))  # generate proposal 
-    # calculate log_posterior of proposal θ
-    set_params!(stm.pot, θ_proposal) 
-    proposal_log_prob = log_posterior(stm)
-    print(string(s.log_post_val) * " --?--> " * string(proposal_log_prob) * " : ") 
 
-    logU = log(rand())      # Uniform[0, 1]
+    # Propose a new step and calculate its log posterior (no minibatch)
+    θ_proposal = rand(MvNormal(st.θ, s.h * s.Σ)) 
+    proposal_log_prob = s.lp(θ_proposal, stm.data, length(stm.data)) 
+    
+    print(string(s.log_post_val) * " --?--> " * string(proposal_log_prob) * " : ")
 
-    if logU < min(0, proposal_log_prob - s.log_post_val)       # Accept 
-        st.θ = θ_proposal          # Update to proposed state
-        s.log_post_val = proposal_log_prob     # Update log_posterior value at new θ
-    else logU ≥ min(0, proposal_log_prob - s.log_post_val)     # Reject 
-        # mhsampler.θ = mhsampler.θ       # Keep state the same
+    if log(rand()) < min(0, proposal_log_prob - s.log_post_val) # Accept 
+        st.θ = θ_proposal                                       # Update to proposed state
+        s.log_post_val = proposal_log_prob                      # Update log_posterior value at new θ
+    else                                                        # Reject 
         s.n_rejected += 1 
     end 
 
-    # update covariance matrix 
-    s.Σ = s.Σ + (1/(s.t +1))*(((st.θ - s.μ) * transpose(st.θ - s.μ)) - s.Σ)
+    println(s.log_post_val)
+
+    # update shadow covariance matrix at every step 
+    s.Γ = s.Γ + (1/(s.t +1))*(((st.θ - s.μ) * transpose(st.θ - s.μ)) - s.Γ)
     s.μ = s.μ + (1/(s.t +1))*(st.θ - s.μ)
-    s.t += 1
+    s.t += 1 
+
+    # update true covariance after 100 steps and every 10 steps. 
+    if s.t > 100 && s.t % 10 == 0 
+        s.Σ = s.Γ 
+    end 
     return s.log_post_val
 end 
 
-function run!(st::State_θ, s::MHsampler, stm::StatisticalModel, Nsteps::Int64, outp)
+function run!(st::State_θ, s::MHsampler, stm::StatisticalModel, Nsteps::Int64, outp; trueΣ = nothing)
     progress = length(outp.θ)
     for i in 1 + progress:Nsteps + progress
         print(i, "/", Nsteps + progress, ") ")
         step!(st, s, stm)
 
+        # Push θ, log posterior value, rejection rate
         push!(outp.θ, st.θ)
         push!(outp.log_posterior, s.log_post_val)
-        println(s.log_post_val)
         push!(outp.rejection_rate, s.n_rejected/i)
 
+        # Push condition number 
         eigenvalues = eigen(s.Σ).values 
         minmax_ratio = eigenvalues[length(eigenvalues)]/eigenvalues[1]
         push!(outp.eigen_ratio, minmax_ratio)
+
+        if trueΣ !== nothing 
+            # Push covariance metric 
+            push!(outp.covariance_metric, norm(s.Σ - trueΣ)) 
+        end 
            
     end 
 end 

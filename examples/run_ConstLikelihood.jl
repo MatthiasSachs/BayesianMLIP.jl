@@ -8,7 +8,7 @@ using Flux
 using BayesianMLIP.Utils: ConstantLikelihood
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 6.0); 
 
 # Initialize log-likelihood to be 0
@@ -16,9 +16,9 @@ log_likelihood_toy = ConstantLikelihood()
 # (pot::ACEflux.FluxPotential, d) -> -0.0
 
 # Set prior to be Gaussian with some arbitrary Sigma 
-X = rand(30, 30)
+X = rand(4, 4)
 Sigma = X' * X
-priorNormal_toy = MvNormal(zeros(30), Sigma)
+priorNormal_toy = MvNormal(zeros(4), Sigma)
 
 
 # Generate dummy dataset 
@@ -27,8 +27,15 @@ Data = zeros(100)
 # Initialize StatisticalModel object
 stm2 = StatisticalModel(log_likelihood_toy, priorNormal_toy, pot, Data); 
 
-glpr = get_glpr(stm2)
-ll, gll = get_ll(stm2), get_gll(stm2)
+lpr = get_lpr(stm2)         # log prior
+glpr = get_glpr(stm2)       # gradient of log prior 
+ll = get_ll(stm2)           # log likelihood of 1 data point 
+gll = get_gll(stm2)         # gradient of log likelihood 
+lp = get_lp(stm2)           # log posterior 
+glp = get_glp(stm2)         # gradient of log posterior 
+
+
+
 # If we employ a flat likelihood, the (gradient of the) log likelihood doesn't change if we modify the parameter values and/or the data:
 ll(rand(30),[1,2]) == ll(rand(30),[1,2,"bla" ])
 gll(rand(30),[1,2]) == gll(rand(30),[1,2,"bla" ])

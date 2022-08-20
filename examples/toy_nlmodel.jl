@@ -8,56 +8,53 @@ import BayesianMLIP.NLModels: Hamiltonian, energy, forces
 using ACEflux: FluxPotential
 import Distributions: logpdf, MvNormal
 using JSON
+using Flux 
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
-FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10
+FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
-pot = ACEflux.FluxPotential(model, 6.0);
-# Don't need to initialize this since it'll be assigned in run, but for testing purposes 
-set_params!(pot, randn(30))         
-
-# Initialize atomic configuration
-at = bulk(:Cu, cubic=true) * 3;
-rattle!(at, 0.1) ;       # If we rattle this too much, the integrators can become unstable
-
-# Testing parameters (NLModels), energy/forces (JuLIP) functions 
-get_params(pot)
-nparams(pot)
-energy(pot, at)
-forces(pot, at)
+pot = ACEflux.FluxPotential(model, 3.0); 
 
 # Initialize log-likelihood to be 0
-log_likelihood_toy = (pot::ACEflux.FluxPotential, d) -> -0.0
+log_likelihood_toy = ConstantLikelihood()
 
 # Set prior to be Gaussian with some Sigma 
-X = rand(30, 30)
+dim = nparams(pot)
+X = rand(dim, dim)
 Sigma = X' * X
-priorNormal_toy = MvNormal(zeros(30), Sigma)
+k = eigen(Sigma).values
+Sigma = Diagonal(k)
+priorNormal_toy = MvNormal(zeros(dim), Sigma)
+
+
+eigen(Sigma).values 
+
+eigen(Sigma).values[end] / eigen(Sigma).values[1]
 
 # Generate dummy dataset 
-at_dataset = JSON.parsefile("./train_test/Cu/training.json"); # 262-vector 
-Data = getData(at_dataset)
+Data = zeros(100);
 
 stm2 = StatisticalModel(log_likelihood_toy, priorNormal_toy, pot, Data); 
-set_params!(stm2.pot, zeros(30))
-log_likelihood(stm2)
-log_prior(stm2)
-log_posterior(stm2)
 
-st_toy = State_θ(randn(30), randn(30))
+ll = get_ll(stm2) 
+lpr = get_lpr(stm2)
+
+lpr(zeros(dim))
+ll(zeros(dim), Data[1])
 
 # Run Adaptive Metropolis Hastings 
-AMHoutp = MHoutp_θ()
-AMHsampler = AdaptiveMHsampler(0.5, st_toy, stm2, st_toy.θ, I)
-Samplers.run!(st_toy, AMHsampler, stm2, 100000, AMHoutp)
+st = State_θ(zeros(nparams(stm2.pot)), zeros(nparams(stm2.pot)))
+AMHoutp = MHoutp_θ()    # new run 
+AMHsampler = AdaptiveMHsampler(1.0, st, stm2, st.θ, I) ;    
+Samplers.run!(st, AMHsampler, stm2, 100000, AMHoutp; trueΣ=Sigma)
 
-plotRejectionRate(AMHoutp)
-plotTrajectory(AMHoutp, 1)
-histogramTrajectory(AMHoutp, 1) 
-true_eigen_ratio = eigen(Sigma).values[30]/eigen(Sigma).values[1]
-plotEigenRatio(AMHoutp)
+Histogram(AMHoutp; save_fig=false)
+Trajectory(AMHoutp; save_fig=false)
+Summary(AMHoutp; save_fig=false)
 
-
+Histogram(AMHoutp; save_fig=true)
+Trajectory(AMHoutp; save_fig=true)
+Summary(AMHoutp; save_fig=true)
 
 # Run BAOAB 
 st_toy = State_θ(randn(30), randn(30))

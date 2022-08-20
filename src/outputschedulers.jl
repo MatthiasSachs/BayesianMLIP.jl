@@ -17,8 +17,9 @@ mutable struct MHoutp_θ <: outputscheduler
     log_posterior 
     rejection_rate 
     eigen_ratio
+    covariance_metric 
 end 
-MHoutp_θ() = MHoutp_θ([], [], [], []) 
+MHoutp_θ() = MHoutp_θ([], [], [], [], []) 
 
 mutable struct BAOABoutp_θ <: outputscheduler
     θ 
