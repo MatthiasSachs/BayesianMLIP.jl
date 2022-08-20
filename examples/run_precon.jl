@@ -1,5 +1,6 @@
 using ACEflux, JuLIP, ACE, Flux, Zygote
 using ACEflux: Linear_ACE
+using BayesianMLIP.Utils
 
 #model = Chain(Linear_ACE(2, 7, 4), Dense(4, 3, σ), Dense(3, 1), sum)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3

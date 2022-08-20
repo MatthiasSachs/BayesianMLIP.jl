@@ -11,7 +11,7 @@ import LinearAlgebra: eigen
 using ThreadsX
 
 export StatisticalModel, params, nparams
-export log_prior, log_likelihood, log_posterior
+export set_params!, get_params, get_params!
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
@@ -235,6 +235,7 @@ params(pot::FluxPotential)  = Flux.params(pot.model)
 function get_params(m)
     c = zeros(nparams(m))
     get_params!(c, m) 
+    return c
 end
 get_params!(c::AbstractArray{T}, pot::FluxPotential)  where {T <: Real} = get_params!(c,pot.model)
 get_params!(c::AbstractArray{T}, model::Chain)  where {T <: Real} = copy!(c,Flux.params(model))
@@ -252,7 +253,7 @@ function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
     linear_ace_layer = pot.model.layers[1]
     scaling = ACE.scaling(linear_ace_layer.m.basis,p)
     scaling[1] = 1.0
-    return  Diagonal(cat(scaling, rel_scaling * scaling, dims=1))
+    return  Diagonal([w*s for s in scaling for w in [1.0, rel_scaling]])
 end
 
 
