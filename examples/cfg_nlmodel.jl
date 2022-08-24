@@ -11,7 +11,7 @@ using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 3.0);      
 
 # Initialize atomic configuration
@@ -26,31 +26,15 @@ forces(pot, at)
 
 # Run BAOAB to sample from Gibbs measure of Langevin dynamics with ACE potential
 BAOAB_Sampler = BAOAB(0.01, pot, at; γ=1.0, β=1.0)
-BAOsteps = []
-Dynamics.run!(BAOAB_Sampler, pot, at, 500; outp = BAOsteps) 
-x_traj1 = [step.X[1][1] for step in BAOsteps]
-plot(1:length(BAOsteps), x_traj1, title="BAOAB Component Trajectory", legend=false)
-histogram(x_traj1, bins = :scott, title="Histogram of BAOAB Samples", legend=false)
-plot(1:length(x_traj1), [Hamiltonian(pot, elem) for elem in BAOsteps], title="BAOAB Hamiltonian", legend=false)
-
-# Run BADODADB 
-BADODAB_Sampler = BADODAB(0.1, pot, at)
-BADODABsteps = []
-Dynamics.run!(BADODAB_Sampler, pot, at, 500; outp = BADODABsteps)
-x_traj2 = [step.X[1][2] for step in BADODABsteps]
-plot(1:length(BADODABsteps), x_traj2, title="BADODAB Component Trajectory", legend=false)
-histogram(x_traj2, bins = :scott, title="Histogram of BADODAB Samples", legend=false)
-plot(1:length(BADODABsteps), [Hamiltonian(pot, elem) for elem in BADODABsteps], title="BADODAB Hamiltonian", legend=false)
-
 
 
 function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::String) 
     # Initialize pot with random parameters 
     _FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-    _model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(_FS), sum);
+    _model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(_FS), sum);
     _pot = ACEflux.FluxPotential(_model, 3.0);
     θ = randn(nparams(_pot))
-    set_params!(_pot, θ)
+    BayesianMLIP.NLModels.set_params!(_pot, θ)
 
     data = [] 
     for i in 1:Ndata 
@@ -62,7 +46,7 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
         println("Data added: ", i)
     end 
 
-    Theta = get_params(_pot) 
+    Theta = BayesianMLIP.NLModels.get_params(_pot) 
     Data = data 
 
     dict = Dict{String, Any}("theta" => Theta, "data"  => Data)
@@ -70,5 +54,5 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
     return (Theta, Data) 
 end 
 
-generate_data(10, BAOAB_Sampler, at, "artificial_data3")
+generate_data(10, BAOAB_Sampler, at, "artificial_data1")
 

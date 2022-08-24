@@ -14,7 +14,7 @@ using JSON
 # model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 1), GenLayer(FS), sum);
 
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 2), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 3.0); 
 
 # basis = Linear_ACE(;ord = 2, maxdeg =4, Nprop = 2).m.basis
@@ -36,50 +36,97 @@ priorUniform = FlatPrior()
 real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
 
 # artificial data 
-info = load("./Run_Data/Artificial_Data/artificial_data3.jld2")
+info = load("./Run_Data/Artificial_Data/artificial_data1.jld2")
 artificial_data = info["data"][1:end]
-true_θ = () -> load("./Run_Data/Artificial_Data/artificial_data3.jld2")["theta"]
+true_θ = () -> load("./Run_Data/Artificial_Data/artificial_data1.jld2")["theta"]
+true_θ()
 
 # Initialize StatisticalModel 
 stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, artificial_data); 
 
-# SGLD Sampler 
-st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
-SGLDoutp = SGLDoutp_θ() 
-SGLDsampler = SGLD_θ(1e-7, st, stm1, 1; β=1.) ;
-Samplers.run!(st, SGLDsampler, stm1, 30000, SGLDoutp) 
-
-Histogram(SGLDoutp)
-Trajectory(SGLDoutp)
-Summary(SGLDoutp)
-
-lpr = get_lpr(stm1) 
-ll = get_ll(stm1) 
+ll = get_ll(stm1)
+lpr = get_lpr(stm1)
 lp = get_lp(stm1)
 
-lpr(reshape(true_θ(), 4))
-sum([ll(reshape(true_θ(),4), d) for d in stm1.data])
-lp(reshape(true_θ(), 4), stm1.data, length(stm1.data))
+log_posterior = θ -> lp(θ, stm1.data, length(stm1.data))
+default(size=(600, 600), fc=:heat) 
+x, y = -1.0:0.01:3.0,  -2.0922:0.000001:-2.0921 
+z = Surface((x, y) -> log_posterior([x, y]), x, y)
+surface(x, y, z, linealpha=0.3, xlabel="x", ylabel="y")
 
+
+# SGLD Sampler 
+# st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+st = State_θ(reshape(true_θ(), nparams(stm1.pot)) + 0.01 * randn(nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+SGLDoutp = SGLDoutp_θ()  
+SGLDsampler = SGLD_θ(1e-11, st, stm1, 2; β=Inf) ;
+@time Samplers.run!(st, SGLDsampler, stm1, 30, SGLDoutp)  
+
+plot([elem[1] for elem in SGLDoutp.θ], [elem[2] for elem in SGLDoutp.θ], legend=false)
+
+outps = []
+for n_samplers in 1:10
+    st = State_θ(reshape(true_θ(), nparams(stm1.pot)) + 0.1 * randn(nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+    SGLDoutp = SGLDoutp_θ()  
+    SGLDsampler = SGLD_θ(1e-11, st, stm1, 10; β=Inf) ;
+    Samplers.run!(st, SGLDsampler, stm1, 100, SGLDoutp) 
+    
+    push!(outps, SGLDoutp)
+end 
+
+p = scatter([true_θ()[1]], [true_θ()[2]], markershape=:star, markersize=7, color=:red)
+for outp in outps
+    plot!([t[1] for t in outp.θ], [t[2] for t in outp.θ], legend=false, markershape=:circle, markersize=2)
+end 
+display(p)
 
 # AMH Sampler 
 st1 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+# st1 = State_θ(randn(nparams(stm1.pot)), zeros(nparams(stm1.pot)))
 AMHoutp1 = MHoutp_θ()    
-AMHsampler1 = AdaptiveMHsampler(1.0, st, stm1, st.θ, I) ;    
-Samplers.run!(st, AMHsampler, stm1, 200000, AMHoutp)
-
-st2 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
-AMHoutp2 = MHoutp_θ()    
-AMHsampler2 = AdaptiveMHsampler(0.01, st, stm1, st.θ, I) ;    
-Samplers.run!(st, AMHsampler, stm1, 200000, AMHoutp)
+AMHsampler1 = AdaptiveMHsampler(0.03, st1, stm1, st1.θ, get_precon(stm1.pot, .5, 2.0)) ;  
+Samplers.run!(st1, AMHsampler1, stm1, 300000, AMHoutp1)
 
 Histogram(AMHoutp1)
 Trajectory(AMHoutp1)
 Summary(AMHoutp1)
+Histogram(AMHoutp1; save_fig=true, title="AMH_Hist_0.03_FullFS_Preconditioned")
+Trajectory(AMHoutp1; save_fig=true, title="AMH_Traj_0.03_FullFS_Preconditioned")
+Summary(AMHoutp1; save_fig=true, title="AMH_Summ_0.03_FullFS_Preconditioned")
 
-Histogram(AMHoutp1; save_fig=true)
-Trajectory(AMHoutp1; save_fig=true)
-Summary(AMHoutp1; save_fig=true)
+st2 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+AMHoutp2 = MHoutp_θ()    
+AMHsampler2 = AdaptiveMHsampler(0.1, st2, stm1, st2.θ, get_precon(stm1.pot, .5, 2.0)) ;  
+Samplers.run!(st2, AMHsampler2, stm1, 300000, AMHoutp2)
+Histogram(AMHoutp2)
+Trajectory(AMHoutp2)
+Summary(AMHoutp2)
+Histogram(AMHoutp2; save_fig=true, title="AMH_Hist_0.1_FullFS_Preconditioned")
+Trajectory(AMHoutp2; save_fig=true, title="AMH_Traj_0.1_FullFS_Preconditioned")
+Summary(AMHoutp2; save_fig=true, title="AMH_Summ_0.1_FullFS_Preconditioned")
+
+st3 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+AMHoutp3 = MHoutp_θ()    
+AMHsampler3 = AdaptiveMHsampler(0.001, st3, stm1, st3.θ, get_precon(stm1.pot, .5, 2.0)) ;  
+Samplers.run!(st3, AMHsampler3, stm1, 300000, AMHoutp3)
+Histogram(AMHoutp3)
+Trajectory(AMHoutp3)
+Summary(AMHoutp3)
+Histogram(AMHoutp3; save_fig=true, title="AMH_Hist_1.0_Preconditioned")
+Trajectory(AMHoutp3; save_fig=true, title="AMH_Traj_1.0_Preconditioned")
+Summary(AMHoutp3; save_fig=true, title="AMH_Summ_1.0_Preconditioned")
+
+st4 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+AMHoutp4 = MHoutp_θ()    
+AMHsampler4 = AdaptiveMHsampler(0.001, st4, stm1, st4.θ, get_precon(stm1.pot, .5, 2.0)) ;  
+Samplers.run!(st4, AMHsampler4, stm1, 50000, AMHoutp4)
+Histogram(AMHoutp4)
+Trajectory(AMHoutp4)
+Summary(AMHoutp4)
+Histogram(AMHoutp4; save_fig=true, title="AMH_Hist_0.001_Preconditioned")
+Trajectory(AMHoutp4; save_fig=true, title="AMH_Traj_0.001_Preconditioned")
+Summary(AMHoutp4; save_fig=true, title="AMH_Summ_0.001_Preconditioned")
+
 
 # Save last state, last state of sampler, statistical model, and outp to jld2 file 
 dict = Dict{String, Any}( "description" => :"10000 AMH steps run on Artificial Data [1:2:500] initialized at mode", 

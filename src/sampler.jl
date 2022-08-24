@@ -7,7 +7,7 @@ using LinearAlgebra
 using LinearAlgebra: norm
 using BayesianMLIP.Outputschedulers
 
-export BAOSplitting, MHsampler, SimpleMHsamplers
+export BAOSplitting, MHsampler, SimpleMHsamplers, sampler 
 export State_θ, BAOAB_θ, BADODAB_θ, SGLD_θ, run! 
 export SimpleMHsampler, AdaptiveMHsampler, step!, run!
 
@@ -27,34 +27,35 @@ mutable struct SGLD_θ <: sampler
     β::Float64 
     mb_size::Int64
     glp
+    lp
 end 
-SGLD_θ(h::Float64, state::State_θ, stm::StatisticalModel, mb_size::Int64 ; β::Float64=1.0) = SGLD_θ(h, get_glp(stm)(state.θ, [stm.data[i] for i in sample(1:length(stm.data), mb_size, replace = false)], length(stm.data)), β, mb_size, get_glp(stm))
+SGLD_θ(h::Float64, state::State_θ, stm::StatisticalModel, mb_size::Int64 ; β::Float64=1.0) = SGLD_θ(h, get_glp(stm)(state.θ, [stm.data[i] for i in sample(1:length(stm.data), mb_size, replace = false)], length(stm.data)), β, mb_size, get_glp(stm), get_lp(stm))
 
 function step!(st::State_θ, s::SGLD_θ, stm::StatisticalModel)
     st.θ = st.θ + s.h * s.F + sqrt(2 * s.h / s.β) * randn(length(st.θ))
     s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data))
+    s.F[1] = 4e5 * s.F[1]
 end 
 
 function run!(st::State_θ, s::SGLD_θ, stm::StatisticalModel, Nsteps::Int64, outp)
     
     # print first log_posterior value out 
-    x = log_posterior(stm)
+    x = s.lp(st.θ, stm.data, length(stm.data))
     push!(outp.log_posterior, x)
-    force_norm = norm(s.F)
-    println("0) $x   ($force_norm)")
+    println("0) $x")
 
     for i in 1:Nsteps 
         first = st.θ
         step!(st, s, stm) 
-        force_norm = norm(s.F)
+
         push!(outp.θ, st.θ)
 
-        x = log_posterior(stm)
+        x = s.lp(st.θ, stm.data, length(stm.data))
         push!(outp.log_posterior, x)
 
         step_diff = norm(st.θ - first)
 
-        println("$i) $x   ($force_norm)  ($step_diff)")        # print log_posterior value 
+        println("$i) $x  ($step_diff)")       
     end 
 end 
 
@@ -228,7 +229,7 @@ function run!(st::State_θ, s::MHsampler, stm::StatisticalModel, Nsteps::Int64, 
 
         # Push condition number 
         eigenvalues = eigen(s.Σ).values 
-        minmax_ratio = eigenvalues[length(eigenvalues)]/eigenvalues[1]
+        minmax_ratio = maximum(eigenvalues)/minimum(eigenvalues)
         push!(outp.eigen_ratio, minmax_ratio)
 
         if trueΣ !== nothing 

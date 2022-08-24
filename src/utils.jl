@@ -17,7 +17,7 @@ export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
 
 
-function Histogram(outp; save_fig=false) 
+function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
     i = [1, 2, 3, 4]
     true_vals = outp.θ[1] 
 
@@ -37,13 +37,13 @@ function Histogram(outp; save_fig=false)
 
     if save_fig == true 
         plot(p1, p2, p3, p4, layout=l)
-        savefig("./plots/AMH_Hist_1.0_Extended.png")
+        savefig("./plots/$title.png")
     else 
         plot(p1, p2, p3, p4, layout=l)
     end 
 end 
 
-function Trajectory(outp; save_fig=false) 
+function Trajectory(outp::MHoutp_θ ; save_fig=false, title="") 
     len = length(outp.θ)
 
     i = [1, 2, 3, 4]
@@ -67,13 +67,13 @@ function Trajectory(outp; save_fig=false)
 
     if save_fig == true 
         plot(p1, p2, p3, p4, layout=l)
-        savefig("./plots/AMH_Traj_1.0_Extended.png")
+        savefig("./plots/$title.png")
     else 
         plot(p1, p2, p3, p4, layout=l)
     end 
 end 
 
-function Summary(outp; save_fig=false) 
+function Summary(outp::MHoutp_θ ; save_fig=false, title="") 
     len = length(outp.θ)
     l = @layout [a b ; c d] 
 
@@ -90,7 +90,7 @@ function Summary(outp; save_fig=false)
 
     if save_fig == true 
         plot(p1, p2, p3, p4, layout=l)
-        savefig("./plots/AMH_Summ_1.0_Extended.png")
+        savefig("./plots/$title.png")
     else 
         plot(p1, p2, p3, p4, layout=l)
     end 
