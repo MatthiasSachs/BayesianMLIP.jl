@@ -1,4 +1,4 @@
-using ACE, ACEatoms, Plots, ACEflux, Flux, Zygote, LinearAlgebra, JLD2, JuLIP, StaticArrays
+using ACE, ACEatoms, Plots, ACEflux, Flux, Zygote, LinearAlgebra, JLD2, JuLIP, StaticArrays, Statistics
 import StatsBase: sample
 using BayesianMLIP, BayesianMLIP.NLModels, BayesianMLIP.Dynamics  
 using BayesianMLIP.MiniACEflux, BayesianMLIP.Utils, BayesianMLIP.Samplers, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser
@@ -10,13 +10,10 @@ import Distributions: logpdf, MvNormal
 using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
-# FS(ϕ) = ϕ[1]
-# model = Chain(Linear_ACE(;ord = 1, maxdeg = 1, Nprop = 1), GenLayer(FS), sum);
-
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 1, maxdeg = 6, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 3.0); 
-
+nparams(pot)
 # basis = Linear_ACE(;ord = 2, maxdeg =4, Nprop = 2).m.basis
 # scaling = ACE.scaling(basis, 2)
 
@@ -42,18 +39,12 @@ true_θ = () -> load("./Run_Data/Artificial_Data/artificial_data1.jld2")["theta"
 true_θ()
 
 # Initialize StatisticalModel 
-stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, artificial_data); 
+stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data); 
+get_precon_params(stm1)
 
 ll = get_ll(stm1)
 lpr = get_lpr(stm1)
 lp = get_lp(stm1)
-
-log_posterior = θ -> lp(θ, stm1.data, length(stm1.data))
-default(size=(600, 600), fc=:heat) 
-x, y = -1.0:0.01:3.0,  -2.0922:0.000001:-2.0921 
-z = Surface((x, y) -> log_posterior([x, y]), x, y)
-surface(x, y, z, linealpha=0.3, xlabel="x", ylabel="y")
-
 
 # SGLD Sampler 
 # st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
@@ -105,29 +96,6 @@ Histogram(AMHoutp2; save_fig=true, title="AMH_Hist_0.1_FullFS_Preconditioned")
 Trajectory(AMHoutp2; save_fig=true, title="AMH_Traj_0.1_FullFS_Preconditioned")
 Summary(AMHoutp2; save_fig=true, title="AMH_Summ_0.1_FullFS_Preconditioned")
 
-st3 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
-AMHoutp3 = MHoutp_θ()    
-AMHsampler3 = AdaptiveMHsampler(0.001, st3, stm1, st3.θ, get_precon(stm1.pot, .5, 2.0)) ;  
-Samplers.run!(st3, AMHsampler3, stm1, 300000, AMHoutp3)
-Histogram(AMHoutp3)
-Trajectory(AMHoutp3)
-Summary(AMHoutp3)
-Histogram(AMHoutp3; save_fig=true, title="AMH_Hist_1.0_Preconditioned")
-Trajectory(AMHoutp3; save_fig=true, title="AMH_Traj_1.0_Preconditioned")
-Summary(AMHoutp3; save_fig=true, title="AMH_Summ_1.0_Preconditioned")
-
-st4 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
-AMHoutp4 = MHoutp_θ()    
-AMHsampler4 = AdaptiveMHsampler(0.001, st4, stm1, st4.θ, get_precon(stm1.pot, .5, 2.0)) ;  
-Samplers.run!(st4, AMHsampler4, stm1, 50000, AMHoutp4)
-Histogram(AMHoutp4)
-Trajectory(AMHoutp4)
-Summary(AMHoutp4)
-Histogram(AMHoutp4; save_fig=true, title="AMH_Hist_0.001_Preconditioned")
-Trajectory(AMHoutp4; save_fig=true, title="AMH_Traj_0.001_Preconditioned")
-Summary(AMHoutp4; save_fig=true, title="AMH_Summ_0.001_Preconditioned")
-
-
 # Save last state, last state of sampler, statistical model, and outp to jld2 file 
 dict = Dict{String, Any}( "description" => :"10000 AMH steps run on Artificial Data [1:2:500] initialized at mode", 
                           "state" => st, 
@@ -145,11 +113,6 @@ st = info["state"]      # stable θ
 BAOABoutp = BAOABoutp_θ()        # θ, θ', log_posterior 
 BAOABsampler = BAOAB_θ(1e-4, st, stm1, 1; β=1., γ=1e7); 
 Samplers.run!(st, BAOABsampler, stm1, 1000, BAOABoutp)
-
-plotMomenta(BAOABoutp, 6)
-plotTrajectory(BAOABoutp, 1) 
-histogramTrajectory(BAOABoutp, 5) 
-plotLogPosterior(BAOABoutp)
 
 info2 = load("./Run_Data/AMH_Cu_Training1/AMH_Cu_Training1-1081.jld2")
 st2 = info["state"]      # stable θ

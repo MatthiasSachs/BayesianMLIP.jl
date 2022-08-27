@@ -1,6 +1,6 @@
 module Utils
-using Plots, ACE
-using Distributions
+using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statistics
+using ACEatoms: neighbourlist
 using Distributions: logpdf, MvNormal
 using LinearAlgebra 
 using BayesianMLIP.Outputschedulers
@@ -15,6 +15,7 @@ export set_params!, get_params, get_params!
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
+export get_precon_params 
 
 
 function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
@@ -104,6 +105,21 @@ mutable struct StatisticalModel{LL,PR,POT}
     prior::PR
     pot::POT
     data
+end 
+
+function get_precon_params(stm::StatisticalModel)
+    basis = stm.pot.model[1].m.basis
+
+    # outputs matrix of K × ∑_{d=1}^D N_d, where D is the number of data in stm.data
+    # and N_d is the number of atomic environments in the 'd'th data
+
+    mat = hcat([hcat(ThreadsX.map(i -> [B.val for B in ACE.evaluate(basis, [ ACE.State(rr = r)  for r in NeighbourLists.neigs(neighbourlist(d.at, stm.pot.cutoff), i)[2]] |> ACEConfig)], 1:length(d.at))...) for d in stm.data]...)
+
+    std_dev = [std(mat[k, :]) for k in 1:length(basis)]
+
+    avg = [mean(mat[k, :]) for k in 1:length(basis)]
+
+    return hcat(avg, std_dev)
 end 
 
 struct ConstantLikelihood end
