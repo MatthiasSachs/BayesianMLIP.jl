@@ -7,6 +7,7 @@ import BayesianMLIP.NLModels: Hamiltonian, energy, forces
 # using BayesianMLIP.MiniACEflux: FluxPotential
 using ACEflux: FluxPotential
 import Distributions: logpdf, MvNormal
+using ACE: set_params!
 using JSON
 using Flux 
 
@@ -14,6 +15,11 @@ using Flux
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 3.0); 
+nparams(pot)
+get_params(pot) 
+set_params!(pot, randn(30))
+BayesianMLIP.NLModels.get_params(pot)
+BayesianMLIP.NLModels.set_params!(pot, randn(30))
 
 # Initialize log-likelihood to be 0
 log_likelihood_toy = ConstantLikelihood()

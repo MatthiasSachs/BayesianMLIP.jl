@@ -1,5 +1,4 @@
 module NLModels
-
 using ACE, ACEatoms, Flux, JuLIP, ACEflux
 import ACEflux: FluxPotential
 using ACE: evaluate, val, AbstractConfiguration
@@ -14,17 +13,9 @@ import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEM
 export get_params, nparams, set_params!
 export energy, forces, Hamiltonian, params, gradParams
 
-function get_params(pot::FluxPotential) 
-    return pot.model[1].weight
-end 
-
-function set_params!(pot::FluxPotential, params) 
-    s1, s2 = size(pot.model[1].weight)
-    if length(params) != s1 * s2 
-       throw(error("Length does not match parameters of model: $(s1*s2)"))
-    end  
-    pot.model[1].weight = reshape(params, s1, s2)
-end 
+# function get_params(pot::FluxPotential) 
+#     return pot.model[1].weight
+# end 
 
 # function gradParams(pot, at::AbstractAtoms, θ)       # gradient of potential w.r.t. parameters
 #     s = size(pot.model[1].weight)
