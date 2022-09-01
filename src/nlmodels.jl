@@ -17,6 +17,14 @@ export energy, forces, Hamiltonian, params, gradParams
 #     return pot.model[1].weight
 # end 
 
+function set_params!(pot::FluxPotential, params) 
+    s1, s2 = size(pot.model[1].weight)
+    if length(params) != s1 * s2 
+       throw(error("Length does not match parameters of model: $(s1*s2)"))
+    end  
+    pot.model[1].weight = reshape(params, s1, s2)
+end 
+
 # function gradParams(pot, at::AbstractAtoms, θ)       # gradient of potential w.r.t. parameters
 #     s = size(pot.model[1].weight)
 #     pot.model[1].weight = reshape(θ, s[1], s[2])

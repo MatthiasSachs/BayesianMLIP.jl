@@ -10,10 +10,11 @@ import Distributions: logpdf, MvNormal
 using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
-FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-model = Chain(Linear_ACE(;ord = 1, maxdeg = 6, Nprop = 2), GenLayer(FS), sum);
+FS(ϕ) = ϕ[1] #+ sqrt(abs(ϕ[2]) + 1/9) - 1/3
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 1), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 3.0); 
 nparams(pot)
+get_params(pot)
 # basis = Linear_ACE(;ord = 2, maxdeg =4, Nprop = 2).m.basis
 # scaling = ACE.scaling(basis, 2)
 
@@ -30,7 +31,7 @@ priorNormal = MvNormal(zeros(nparams(pot)),I)
 priorUniform = FlatPrior()
 
 # real data 
-real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) # 262-vector 
+real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:10] ; # 262-vector 
 
 # artificial data 
 info = load("./Run_Data/Artificial_Data/artificial_data1.jld2")
@@ -41,10 +42,14 @@ true_θ()
 # Initialize StatisticalModel 
 stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data); 
 get_precon_params(stm1)
+precon_params = get_precon_params(stm1)[:,2]
+precon_params[1] = 1e-6
+precon_params = 1 ./ precon_params
+Σ_initial = Diagonal(precon_params)
 
-ll = get_ll(stm1)
-lpr = get_lpr(stm1)
-lp = get_lp(stm1)
+ll = get_ll(stm1) ;
+lpr = get_lpr(stm1) ;
+lp = get_lp(stm1) ;
 
 # SGLD Sampler 
 # st = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
@@ -72,11 +77,14 @@ end
 display(p)
 
 # AMH Sampler 
-st1 = State_θ(reshape(true_θ(), nparams(stm1.pot)), zeros(nparams(stm1.pot)))
+st1 = st1
 # st1 = State_θ(randn(nparams(stm1.pot)), zeros(nparams(stm1.pot)))
 AMHoutp1 = MHoutp_θ()    
-AMHsampler1 = AdaptiveMHsampler(0.03, st1, stm1, st1.θ, get_precon(stm1.pot, .5, 2.0)) ;  
-Samplers.run!(st1, AMHsampler1, stm1, 300000, AMHoutp1)
+AMHsampler1 = AdaptiveMHsampler(1e-5, st1, stm1, st1.θ, Σ_initial) ;  
+@time Samplers.run!(st1, AMHsampler1, stm1, 10000, AMHoutp1)
+
+AMHsampler1.Σ
+eigen(AMHsampler1.Σ).values
 
 Histogram(AMHoutp1)
 Trajectory(AMHoutp1)

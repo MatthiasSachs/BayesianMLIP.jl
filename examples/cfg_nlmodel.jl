@@ -10,8 +10,8 @@ import Distributions: logpdf, MvNormal
 using JSON
 
 # Initialize Finnis-Sinclair Model with ACE basis (w/ coefficients=0)
-FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(FS), sum);
+FS(ϕ) = ϕ[1] # + sqrt(abs(ϕ[2]) + 1/9) - 1/3
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 1), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, 3.0);      
 
 # Initialize atomic configuration
@@ -21,8 +21,11 @@ rattle!(at, 0.1) ;       # If we rattle this too much, the integrators can becom
 # Testing parameters (NLModels), energy/forces (JuLIP) functions 
 get_params(pot)
 nparams(pot)
-energy(pot, at)
-forces(pot, at)
+BayesianMLIP.NLModels.set_params!(pot, randn(15))
+E = energy(pot, at)
+E + 0.05 * E * randn()
+F = forces(pot, at)
+F + 0.05 * sum(sum(F)) * [randn(3) for _ in 1:length(at)]
 
 # Run BAOAB to sample from Gibbs measure of Langevin dynamics with ACE potential
 BAOAB_Sampler = BAOAB(0.01, pot, at; γ=1.0, β=1.0)
@@ -30,8 +33,8 @@ BAOAB_Sampler = BAOAB(0.01, pot, at; γ=1.0, β=1.0)
 
 function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::String) 
     # Initialize pot with random parameters 
-    _FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/9) - 1/3
-    _model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 2), GenLayer(_FS), sum);
+    _FS(ϕ) = ϕ[1] # + sqrt(abs(ϕ[2]) + 1/9) - 1/3
+    _model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 1), GenLayer(_FS), sum);
     _pot = ACEflux.FluxPotential(_model, 3.0);
     θ = randn(nparams(_pot))
     BayesianMLIP.NLModels.set_params!(_pot, θ)
@@ -41,8 +44,10 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
         Dynamics.run!(sampler, _pot, _at, 1000; outp=nothing) 
         # push data (without Gaussian noise for now) 
         Energy = energy(_pot, _at) 
+        Noisy_Energy = Energy + 0.05 * Energy * randn()
         Forces = forces(_pot, _at) 
-        push!(data, (at=deepcopy(_at), E = Energy, F = Forces))
+        Noisy_Forces = Forces + 0.05 * sum(sum(Forces)) * [randn(3) for _ in 1:length(_at)]
+        push!(data, (at=deepcopy(_at), E = Noisy_Energy, F = Noisy_Forces))
         println("Data added: ", i)
     end 
 
@@ -54,5 +59,5 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
     return (Theta, Data) 
 end 
 
-generate_data(10, BAOAB_Sampler, at, "artificial_data1")
+generate_data(30, BAOAB_Sampler, at, "artificial_data_Noisy_30")
 
