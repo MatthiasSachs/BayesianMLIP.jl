@@ -3,10 +3,10 @@ using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statist
 using ACEatoms: neighbourlist
 using Distributions: logpdf, MvNormal
 using LinearAlgebra 
-using BayesianMLIP.Outputschedulers
+using BayesianMLIP.Outputschedulers, BayesianMLIP
 using BayesianMLIP.NLModels
 using Flux, FluxOptTools, Zygote, ACEflux
-import BayesianMLIP.NLModels: nparams 
+import BayesianMLIP.NLModels: nparams, design_matrix, svecs2vec
 import LinearAlgebra: eigen 
 using ThreadsX
 
@@ -15,26 +15,54 @@ export set_params!, get_params, get_params!
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
-export get_precon_params 
+export get_precon_params, get_Y, get_Σ_Tilde
 
 
+mutable struct StatisticalModel{LL,PR,POT} 
+    log_likelihood::LL
+    prior::PR
+    pot::POT
+    data
+end 
+
+
+design_matrix(stm::StatisticalModel) = reduce(vcat, [design_matrix(stm.pot, stm.data[i].at) for i in 1:length(stm.data)])
+
+function get_Y(stm::StatisticalModel) 
+    egy = [d.E for d in stm.data]
+    frc = [reduce(vcat, d.F) for d in stm.data]
+
+    vec = [] 
+    for i in 1:length(stm.data) 
+        push!(vec, egy[i])
+        push!(vec, frc[i])
+    end 
+    return reduce(vcat, vec)
+end 
+
+function get_Σ_Tilde(stm::StatisticalModel)
+    at_lengths = [length(d.at) for d in stm.data]
+    diag = reduce(vcat, [vcat([1], 3 * elem * ones(3 * elem)) for elem in at_lengths])
+    return LinearAlgebra.Diagonal(diag)
+end 
+    
 function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
     i = [1, 2, 3, 4]
     true_vals = outp.θ[1] 
 
     l = @layout [a b ; c d]
     
-    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[1]]], seriestype="vline", color="red")
+    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6, bins=:scott)
+    # plot!([true_vals[i[1]]], seriestype="vline", color="red")
 
     p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[2]]], seriestype="vline", color="red")
+    # plot!([true_vals[i[2]]], seriestype="vline", color="red")
 
     p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[3]]], seriestype="vline", color="red")
+    # plot!([true_vals[i[3]]], seriestype="vline", color="red")
 
     p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    plot!([true_vals[i[4]]], seriestype="vline", color="red")
+    # plot!([true_vals[i[4]]], seriestype="vline", color="red")
 
     if save_fig == true 
         plot(p1, p2, p3, p4, layout=l)
@@ -53,16 +81,16 @@ function Trajectory(outp::MHoutp_θ ; save_fig=false, title="")
     l = @layout [a b ; c d]
     
     p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[1]]], seriestype="hline", color="red")
+    # plot!([true_vals[i[1]]], seriestype="hline", color="red")
 
     p2 = plot([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[2]]], seriestype="hline", color="red")
+    # plot!([true_vals[i[2]]], seriestype="hline", color="red")
 
     p3 = plot([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[3]]], seriestype="hline", color="red")
+    # plot!([true_vals[i[3]]], seriestype="hline", color="red")
 
     p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!([true_vals[i[4]]], seriestype="hline", color="red")
+    # plot!([true_vals[i[4]]], seriestype="hline", color="red")
 
     
 
@@ -99,14 +127,6 @@ function Summary(outp::MHoutp_θ ; save_fig=false, title="")
 end 
 
 
-
-mutable struct StatisticalModel{LL,PR,POT} 
-    log_likelihood::LL
-    prior::PR
-    pot::POT
-    data
-end 
-
 function get_precon_params(stm::StatisticalModel)
     basis = stm.pot.model[1].m.basis
 
@@ -127,19 +147,10 @@ struct ConstantLikelihood end
 struct FlatPrior end
 
 
-function Flux.params(pot::ACEflux.FluxPotential) 
-    return Flux.params(pot.model)
-end
-
-function Flux.params(stm::StatisticalModel) 
-    return Flux.params(stm.pot.model) 
-end
-
-
 
 function get_ll(stm::StatisticalModel)
     function ll(θ,d) 
-        set_params!(stm.pot,θ)
+        BayesianMLIP.NLModels.set_params!(stm.pot,θ)
         return stm.log_likelihood(stm.pot, d)
     end
     return ll
@@ -239,30 +250,6 @@ function eigen(A)
     return eigen_arr([1, 1])
 end 
 
-# Wrapper functions for FluxPotentials
-nparams(pot::FluxPotential) = nparams(pot.model)
-function nparams(model::Chain)
-    return sum(length(p) for p in Flux.params(model))
-end
-
-params(pot::FluxPotential)  = Flux.params(pot.model)
-
-
-function get_params(m)
-    c = zeros(nparams(m))
-    get_params!(c, m) 
-    return c
-end
-get_params!(c::AbstractArray{T}, pot::FluxPotential)  where {T <: Real} = get_params!(c,pot.model)
-get_params!(c::AbstractArray{T}, model::Chain)  where {T <: Real} = copy!(c,Flux.params(model))
-
-set_params!(pot::FluxPotential, c::AbstractArray{T}) where {T <: Real} =  set_params!(pot.model, c) 
-
-function set_params!(model::Chain, c::AbstractArray{T}) where {T <: Real}
-    p = Flux.params(model)
-    copy!(p,c) 
-end
-
 
 function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
     # Only works for FS-type models (i.e., exactly only the first layer is of type Linear_ACE; and no other layers have parameters)
@@ -272,25 +259,6 @@ function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
     return  Diagonal([w*s for s in scaling for w in [1.0, rel_scaling]])
 end
 
-
-
-# animation 
-
-# function animation(outp::atoutp ; name::String="anim", trace=false)
-#     anim = @animate for t in 1:length(outp.at_traj)
-#         frame = outp.at_traj[t].X  
-#         XYZ_Coords = [ [point[1] for point in frame], [point[2] for point in frame], [point[3] for point in frame] ]
-
-#         if trace == true 
-#             scatter!(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
-#                     markercolor="black", legend=false)
-#         else 
-#             scatter(XYZ_Coords[1], XYZ_Coords[2], XYZ_Coords[3], title="Trajectory", framestyle=:grid, marker=2, 
-#                     markercolor="black", legend=false)
-#         end 
-#     end
-#     gif(anim, "$(name).mp4", fps=200)
-# end
 
 
 end 

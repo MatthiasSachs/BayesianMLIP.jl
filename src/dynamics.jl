@@ -137,7 +137,10 @@ function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing)
     if outp === nothing 
         for i in 1:Nsteps 
             step!(d, V, at)
-            println(i)
+
+            if i % 100 == 0  # print every 10 steps 
+                println(i)
+            end 
         end 
     else 
         # push!(outp, at)

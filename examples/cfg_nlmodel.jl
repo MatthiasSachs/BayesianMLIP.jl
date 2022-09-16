@@ -18,36 +18,31 @@ pot = ACEflux.FluxPotential(model, 3.0);
 at = bulk(:Cu, cubic=true) * 3;
 rattle!(at, 0.1) ;       # If we rattle this too much, the integrators can become unstable
 
-# Testing parameters (NLModels), energy/forces (JuLIP) functions 
-get_params(pot)
-nparams(pot)
-BayesianMLIP.NLModels.set_params!(pot, randn(15))
-E = energy(pot, at)
-E + 0.05 * E * randn()
-F = forces(pot, at)
-F + 0.05 * sum(sum(F)) * [randn(3) for _ in 1:length(at)]
-
-# Run BAOAB to sample from Gibbs measure of Langevin dynamics with ACE potential
 BAOAB_Sampler = BAOAB(0.01, pot, at; γ=1.0, β=1.0)
-
 
 function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::String) 
     # Initialize pot with random parameters 
     _FS(ϕ) = ϕ[1] # + sqrt(abs(ϕ[2]) + 1/9) - 1/3
     _model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 1), GenLayer(_FS), sum);
     _pot = ACEflux.FluxPotential(_model, 3.0);
-    θ = randn(nparams(_pot))
+    basis = Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 1).m.basis
+    scaling = ACE.scaling(basis, 2)
+    scaling[1] = 1.
+    θ = randn(nparams(_pot)) ./ scaling
     BayesianMLIP.NLModels.set_params!(_pot, θ)
 
     data = [] 
+    ωE = 1.0
+    ωF = ωE/(3*length(_at))
     for i in 1:Ndata 
         Dynamics.run!(sampler, _pot, _at, 1000; outp=nothing) 
         # push data (without Gaussian noise for now) 
         Energy = energy(_pot, _at) 
-        Noisy_Energy = Energy + 0.05 * Energy * randn()
+        Noisy_Energy = Energy + sqrt(1/ωE) * randn()
         Forces = forces(_pot, _at) 
-        Noisy_Forces = Forces + 0.05 * sum(sum(Forces)) * [randn(3) for _ in 1:length(_at)]
+        Noisy_Forces = Forces + sqrt(1/ωF) * [randn(3) for _ in 1:length(_at)]
         push!(data, (at=deepcopy(_at), E = Noisy_Energy, F = Noisy_Forces))
+        
         println("Data added: ", i)
     end 
 
@@ -59,5 +54,5 @@ function generate_data(Ndata::Int64, sampler, _at::AbstractAtoms, filename::Stri
     return (Theta, Data) 
 end 
 
-generate_data(30, BAOAB_Sampler, at, "artificial_data_Noisy_30")
+generate_data(30, BAOAB_Sampler, at, "artificial_data_Noisy_30") ;
 
