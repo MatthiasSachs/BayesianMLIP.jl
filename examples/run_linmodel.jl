@@ -49,7 +49,7 @@ Y = get_Y(stm1)
 Σ_Tilde = get_Σ_Tilde(stm1)
 β = 1.0 
 
-Σ_posterior = 1 ./ (Σ_0 + β * transpose(Ψ) * Σ_Tilde * Ψ)
+Σ_posterior = inv(Σ_0 + β * transpose(Ψ) * Σ_Tilde * Ψ)
 μ_posterior = β * Σ_posterior * transpose(Ψ) * Y
 
 
