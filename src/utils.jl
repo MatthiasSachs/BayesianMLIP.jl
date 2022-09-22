@@ -15,7 +15,8 @@ export set_params!, get_params, get_params!
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
-export get_precon_params, get_Y, get_Σ_Tilde
+export get_precon_params, get_Y, get_Σ_Tilde, precon_pre_cov_mean
+export precision_to_covariance, precision_to_stddev, covariance_to_precision, covariance_to_stddev
 
 
 mutable struct StatisticalModel{LL,PR,POT} 
@@ -45,6 +46,52 @@ function get_Σ_Tilde(stm::StatisticalModel)
     diag = reduce(vcat, [vcat([1], 3 * elem * ones(3 * elem)) for elem in at_lengths])
     return LinearAlgebra.Diagonal(diag)
 end 
+
+function precon_pre_cov_mean(stm::StatisticalModel) 
+    # Calculates the closed-form precision matrix, covariance matrix, and true mean
+
+    Ψ = design_matrix(stm)
+    Y = get_Y(stm)
+    Σ_0 = I
+    Σ_Tilde = get_Σ_Tilde(stm)
+    β = 1.0 
+
+    # Some middle calculations with SVD
+    cΣ = svd(Σ_Tilde) 
+    Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U) 
+    Σt_sqrtΨ =  Σt_sqrt * Ψ
+
+    # Compute the precision matrix 
+    precision_ = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
+
+    Precision_svd = svd(precision_)
+    covariance_sqrt = Precision_svd.U * Diagonal(1.0 ./ sqrt.(Precision_svd.S)) 
+    Covariance = covariance_sqrt * transpose(covariance_sqrt)
+    μ_posterior = Vector{Float64}(β * Covariance * transpose(Ψ) * Y)
+
+    dict = Dict{String, Any}("true_precision" => precision_, 
+                             "true_covariance"  => Covariance, 
+                             "true_mean" => μ_posterior) 
+
+    return dict
+end 
+
+# precision to covariance is stable, but covariance to precision is not, even with SVD
+# Cov = std * std^T
+function precision_to_stddev(Σ_inv) 
+    precision_svd = svd(Σ_inv) 
+    return precision_svd.U * Diagonal(1.0 ./ sqrt.(precision_svd.S))
+end
+
+function precision_to_covariance(Σ_inv) 
+    std = precision_to_stddev(Σ_inv)
+    return std * transpose(std)
+end 
+
+function covariance_to_stddev(Σ) 
+    singValDec = svd(Σ) 
+    return singValDec.U * Diagonal(sqrt.(singValDec.S))
+end 
     
 function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
     i = [1, 2, 3, 4]
@@ -53,16 +100,16 @@ function Histogram(outp::MHoutp_θ ; save_fig=false, title="")
     l = @layout [a b ; c d]
     
     p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6, bins=:scott)
-    # plot!([true_vals[i[1]]], seriestype="vline", color="red")
+    plot!([true_vals[i[1]]], seriestype="vline", color="red")
 
     p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    # plot!([true_vals[i[2]]], seriestype="vline", color="red")
+    plot!([true_vals[i[2]]], seriestype="vline", color="red")
 
     p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    # plot!([true_vals[i[3]]], seriestype="vline", color="red")
+    plot!([true_vals[i[3]]], seriestype="vline", color="red")
 
     p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
-    # plot!([true_vals[i[4]]], seriestype="vline", color="red")
+    plot!([true_vals[i[4]]], seriestype="vline", color="red")
 
     if save_fig == true 
         plot(p1, p2, p3, p4, layout=l)
@@ -81,16 +128,16 @@ function Trajectory(outp::MHoutp_θ ; save_fig=false, title="")
     l = @layout [a b ; c d]
     
     p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    # plot!([true_vals[i[1]]], seriestype="hline", color="red")
+    plot!([true_vals[i[1]]], seriestype="hline", color="red")
 
     p2 = plot([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    # plot!([true_vals[i[2]]], seriestype="hline", color="red")
+    plot!([true_vals[i[2]]], seriestype="hline", color="red")
 
     p3 = plot([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    # plot!([true_vals[i[3]]], seriestype="hline", color="red")
+    plot!([true_vals[i[3]]], seriestype="hline", color="red")
 
     p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    # plot!([true_vals[i[4]]], seriestype="hline", color="red")
+    plot!([true_vals[i[4]]], seriestype="hline", color="red")
 
     
 
@@ -108,7 +155,7 @@ function Summary(outp::MHoutp_θ ; save_fig=false, title="")
 
     p1 = plot(1 .- outp.rejection_rate, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
 
-    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p2 = plot(outp.eigen_ratio ./ 1e30, title="Condition Value (in 1e30)", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
 
     p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
     plot!([outp.log_posterior[1]], seriestype="hline", color="red")

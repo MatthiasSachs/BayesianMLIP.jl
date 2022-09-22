@@ -5,7 +5,7 @@ using BayesianMLIP.Utils
 # using BayesianMLIP.MiniACEflux: FluxPotential
 using LinearAlgebra
 using LinearAlgebra: norm
-using BayesianMLIP.Outputschedulers
+using BayesianMLIP.Outputschedulers 
 
 export BAOSplitting, MHsampler, SimpleMHsamplers, sampler 
 export State_θ, BAOAB_θ, BADODAB_θ, SGLD_θ, run! 
@@ -179,18 +179,17 @@ mutable struct AdaptiveMHsampler <: MHsampler
     h::Float64 
     log_post_val::Float64 
     μ ::Vector{Float64}
-    Σ       # covariance matrix 
-    Γ       # shadow covariance matrix 
+    std             # std dev matrix 
+    std_shadow       # std dev matrix (to be adapted)
     t::Int64    # step index 
     n_rejected::Int64 
     lp
 end 
-AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, Σ) = AdaptiveMHsampler(h, get_lp(stm)(st.θ, stm.data, length(stm.data)), μ, Σ, Σ, 1, 0, get_lp(stm)) 
+AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, precision) = AdaptiveMHsampler(h, get_lp(stm)(st.θ, stm.data, length(stm.data)), μ, precision_to_stddev(precision), precision_to_stddev(precision), 1, 0, get_lp(stm)) 
 
 function step!(st::State_θ, s::AdaptiveMHsampler, stm::StatisticalModel) 
-
-    # Propose a new step and calculate its log posterior (no minibatch)
-    θ_proposal = rand(MvNormal(st.θ, s.h * s.Σ)) 
+    
+    θ_proposal = sqrt(s.h) * s.std * randn(length(st.θ))
     proposal_log_prob = s.lp(θ_proposal, stm.data, length(stm.data)) 
     
     print(string(s.log_post_val) * " --?--> " * string(proposal_log_prob) * " : ")
@@ -204,12 +203,12 @@ function step!(st::State_θ, s::AdaptiveMHsampler, stm::StatisticalModel)
 
     println(s.log_post_val)
 
-    # update shadow covariance matrix at every step 
+    # update shadow std dev matrix at every step 
     s.Γ = s.Γ + (1/(s.t +1))*(((st.θ - s.μ) * transpose(st.θ - s.μ)) - s.Γ)
     s.μ = s.μ + (1/(s.t +1))*(st.θ - s.μ)
     s.t += 1 
 
-    # update true covariance after 100 steps and every 10 steps. 
+    # update true precision after 100 steps and every 10 steps. 
     if s.t > 100 && s.t % 10 == 0 
         s.Σ = s.Γ 
     end 
@@ -228,13 +227,13 @@ function run!(st::State_θ, s::MHsampler, stm::StatisticalModel, Nsteps::Int64, 
         push!(outp.rejection_rate, s.n_rejected/i)
 
         # Push condition number 
-        eigenvalues = eigen(s.Σ).values 
+        eigenvalues = eigen(s.Σ_inv).values 
         minmax_ratio = maximum(eigenvalues)/minimum(eigenvalues)
         push!(outp.eigen_ratio, minmax_ratio)
 
         if trueΣ !== nothing 
             # Push covariance metric 
-            push!(outp.covariance_metric, norm(s.Σ - trueΣ)) 
+            push!(outp.covariance_metric, norm(s.Σ_inv - trueΣ)) 
         end 
            
     end 
