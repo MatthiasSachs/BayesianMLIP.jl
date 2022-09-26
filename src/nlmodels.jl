@@ -10,25 +10,30 @@ using Zygote
 using StaticArrays
 
 import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEModel
-export get_params, nparams, set_params!
+export get_params, nparams, set_params!, nlinparams
 export energy, forces, site_energy, site_forces, basis_energy, basis_forces
 export design_matrix
 
-function get_params(pot::FluxPotential) 
-    return pot.model.layers[1].weight
-end 
-
 function nparams(pot::FluxPotential) 
-    return length(get_params(pot))
+    return length(pot.model.layers[1].weight)
 end
 
-function set_params!(pot::FluxPotential, params) 
-    if prod(size(params)) != prod(size(pot.model.layers[1].weight))
-        throw(error("Length does not match parameters of model: $(size(pot.model.layers[1].weight))"))
+function nlinparams(pot::FluxPotential) 
+    return Int(length(pot.model.layers[1].weight)/2)
+end
+
+function get_params(pot::FluxPotential) 
+    # returns vector of linear parameters first, then nonlinear 
+    return Vector{Float64}(reshape(transpose(pot.model.layers[1].weight), nparams(pot)))
+end 
+
+function set_params!(pot::FluxPotential, params::Vector{Float64}) 
+    if length(params) != nparams(pot) 
+        throw(error("Length $(length(params)) does not match model number of parameters $(nparams(pot))"))
     end 
-    params = reshape(params, size(pot.model.layers[1].weight))
-    pot.model.layers[1].weight = params 
-    ACE.set_params!(pot.model.layers[1].m, ACEflux.matrix2svector(params))
+    matrix = transpose(reshape(params, size(transpose(pot.model.layers[1].weight))))
+    pot.model.layers[1].weight = matrix
+    ACE.set_params!(pot.model.layers[1].m, ACEflux.matrix2svector(matrix))
     return params
 end 
 
@@ -51,7 +56,8 @@ end
 function basis_energy(pot::FluxPotential, at::AbstractAtoms)
     # Gets all the basis evaluation of entire configuration 
     basis = pot.model.layers[1].m.basis
-    cCu = reshape(get_params(pot), nparams(pot)) 
+    no_lin_copies = size(pot.model.layers[1].weight)[1]
+    cCu = get_params(pot)[1:Int(nparams(pot)/no_lin_copies)]
     models = Dict(:Cu => ACE.LinearACEModel(basis, cCu; evaluator = :standard))
     V = ACEatoms.ACESitePotential(models)
     V_basis = ACEatoms.basis(V)
@@ -61,7 +67,8 @@ end
 function basis_forces(pot::FluxPotential, at::AbstractAtoms)
     # Gets all the basis evaluation of entire configuration 
     basis = pot.model.layers[1].m.basis
-    cCu = reshape(get_params(pot), nparams(pot)) 
+    no_lin_copies = size(pot.model.layers[1].weight)[1]
+    cCu = get_params(pot)[1:Int(nparams(pot)/no_lin_copies)]
     models = Dict(:Cu => ACE.LinearACEModel(basis, cCu; evaluator = :standard))
     V = ACEatoms.ACESitePotential(models)
     V_basis = ACEatoms.basis(V)

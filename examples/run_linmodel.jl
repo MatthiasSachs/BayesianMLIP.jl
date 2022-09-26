@@ -13,12 +13,11 @@ rcut = 3.0
 
 # Initialize linear model
 FS(ϕ) = ϕ[1]
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 4, Nprop = 1, rcut=rcut), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 1, Nprop = 1, rcut=rcut), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, rcut); 
 
 get_params(pot)
-set_params!(pot, randn(1, 15)) 
-nparams(pot)
+set_params!(pot, randn(nparams(pot))) 
 
 function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = ωE/(3*length(d.at)) )
     # Compute the log_likelihood for one data point: log P(θ|d)
@@ -28,30 +27,38 @@ end
 
 log_likelihood_Null = ConstantLikelihood() 
 
-priorNormal = MvNormal(zeros(nparams(pot)),I)
+a = randn(nparams(pot), nparams(pot)); A = a' * a; A = (A' + A)/2; ev = eigen(A).values; println(maximum(ev)/minimum(ev))
+A
+priorNormal = MvNormal(zeros(nparams(pot)), A)
 priorUniform = FlatPrior()
 
 # real data 
 real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:10] ; # 262-vector 
 
+stm1 = StatisticalModel(log_likelihood_Null, priorNormal, pot, real_data) ;
 
-stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
+# Precision matrix, covariance matrix, and mean of posterior Gaussian calculated analytically 
+linear_post_mean_cov = precon_pre_cov_mean(stm1)
 
-# To precondition on linear model, calculate the true covariance, precision, and mean with closed form 
-closed_form_info = precon_pre_cov_mean(stm1)
-precon_precision = closed_form_info["true_precision"]
-precon_covariance = closed_form_info["true_covariance"]
-μ_posterior = closed_form_info["true_mean"]
+# If we would like to make nonlinear preconditioning, then we just set it as a block matrix [Σ 0; 0 0]
+precon_precision = linear_post_mean_cov["true_precision"]
+precon_covariance = linear_post_mean_cov["true_covariance"]
+eigen(precon_precision).values
 
+μ_posterior = linear_post_mean_cov["true_mean"]
+eigen(A).values
 
-
-st1 = State_θ(μ_posterior, zeros(nparams(pot))) ;
+st1 = State_θ(zeros(nparams(pot)), zeros(nparams(pot))) ;
 AMHoutp1 = MHoutp_θ() ; 
-AMHsampler1 = AdaptiveMHsampler(1e-8, st1, stm1, st1.θ, precon_precision) ; 
-Samplers.run!(st1, AMHsampler1, stm1, 10000, AMHoutp1; trueΣ=precon_precision)
-Histogram(AMHoutp1)
-Trajectory(AMHoutp1)
+AMHsampler1 = AdaptiveMHsampler(1e-1, st1, stm1, st1.θ, A) ; 
+Samplers.run!(st1, AMHsampler1, stm1, 30000, AMHoutp1)
+Histogram(AMHoutp1) 
+Trajectory(AMHoutp1) 
 Summary(AMHoutp1)
+
+Histogram(AMHoutp1; save_fig=true, title="LinHist_CNum55")
+Trajectory(AMHoutp1; save_fig=true, title="LinTraj_CNum55")
+Summary(AMHoutp1; save_fig=true, title="LinSumm_CNum55")
 
 
 dict = Dict{String, Any}("st1" => st1, 
@@ -59,12 +66,6 @@ dict = Dict{String, Any}("st1" => st1,
                          "stm1" => stm1, 
                          "AMHoutp1" => AMHoutp1)
 save("linear_run.jld2", dict)
-
-prev_run = load("linear_run.jld2")
-AMHoutp1 = prev_run["AMHoutp1"]
-Histogram(AMHoutp1, save_fig=true, title="Hist_Skewed")
-Trajectory(AMHoutp1, save_fig=true, title="Traj1314151")
-Summary(AMHoutp1, save_fig=true, title="Summary")
 
 
 # Constuct BADODAB sampler and run

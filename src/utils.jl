@@ -56,17 +56,16 @@ function precon_pre_cov_mean(stm::StatisticalModel)
     Σ_Tilde = get_Σ_Tilde(stm)
     β = 1.0 
 
-    # Some middle calculations with SVD
-    cΣ = svd(Σ_Tilde) 
-    Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U) 
-    Σt_sqrtΨ =  Σt_sqrt * Ψ
-
-    # Compute the precision matrix 
+    # Compute precision matrix (stable) 
+    cΣ = svd(Σ_Tilde); Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U); Σt_sqrtΨ =  Σt_sqrt * Ψ
     precision_ = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
 
+    # Compute true covariance using SVD (may be numerically unstable)
     Precision_svd = svd(precision_)
     covariance_sqrt = Precision_svd.U * Diagonal(1.0 ./ sqrt.(Precision_svd.S)) 
     Covariance = covariance_sqrt * transpose(covariance_sqrt)
+
+    # Compute true mean
     μ_posterior = Vector{Float64}(β * Covariance * transpose(Ψ) * Y)
 
     dict = Dict{String, Any}("true_precision" => precision_, 
@@ -88,27 +87,30 @@ function precision_to_covariance(Σ_inv)
     return std * transpose(std)
 end 
 
+function covariance_to_precision(Σ) 
+    
+end 
+
 function covariance_to_stddev(Σ) 
     singValDec = svd(Σ) 
     return singValDec.U * Diagonal(sqrt.(singValDec.S))
 end 
     
 function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
-    i = [1, 2, 3, 4]
+    i = [1, 2, 3, 1]
     true_vals = outp.θ[1] 
-
     l = @layout [a b ; c d]
     
-    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6, bins=:scott)
+    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, bins=:scott)
     plot!([true_vals[i[1]]], seriestype="vline", color="red")
 
-    p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1)
     plot!([true_vals[i[2]]], seriestype="vline", color="red")
 
-    p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1)
     plot!([true_vals[i[3]]], seriestype="vline", color="red")
 
-    p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=6)
+    p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1)
     plot!([true_vals[i[4]]], seriestype="vline", color="red")
 
     if save_fig == true 
@@ -121,10 +123,8 @@ end
 
 function Trajectory(outp::MHoutp_θ ; save_fig=false, title="") 
     len = length(outp.θ)
-
-    i = [1, 2, 3, 4]
+    i = [1, 2, 3, 1]
     true_vals = outp.θ[1] 
-
     l = @layout [a b ; c d]
     
     p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
@@ -138,8 +138,6 @@ function Trajectory(outp::MHoutp_θ ; save_fig=false, title="")
 
     p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
     plot!([true_vals[i[4]]], seriestype="hline", color="red")
-
-    
 
     if save_fig == true 
         plot(p1, p2, p3, p4, layout=l)
