@@ -17,6 +17,7 @@ export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
 export get_precon_params, get_Y, get_Σ_Tilde, precon_pre_cov_mean
 export precision_to_covariance, precision_to_stddev, covariance_to_precision, covariance_to_stddev
+export dampen, cnum
 
 
 mutable struct StatisticalModel{LL,PR,POT} 
@@ -26,6 +27,10 @@ mutable struct StatisticalModel{LL,PR,POT}
     data
 end 
 
+function cnum(mat) 
+    ev = eigen(mat).values 
+    return maximum(ev)/minimum(ev)
+end 
 
 design_matrix(stm::StatisticalModel) = reduce(vcat, [design_matrix(stm.pot, stm.data[i].at) for i in 1:length(stm.data)])
 
@@ -60,7 +65,8 @@ function precon_pre_cov_mean(stm::StatisticalModel)
     cΣ = svd(Σ_Tilde); Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U); Σt_sqrtΨ =  Σt_sqrt * Ψ
     precision_ = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
 
-    # Compute true covariance using SVD (may be numerically unstable)
+    # Compute true covariance using SVD
+    # May be numerically unstable due to bad condition number
     Precision_svd = svd(precision_)
     covariance_sqrt = Precision_svd.U * Diagonal(1.0 ./ sqrt.(Precision_svd.S)) 
     Covariance = covariance_sqrt * transpose(covariance_sqrt)
@@ -95,9 +101,13 @@ function covariance_to_stddev(Σ)
     singValDec = svd(Σ) 
     return singValDec.U * Diagonal(sqrt.(singValDec.S))
 end 
+
+function dampen(matrix::Matrix{Float64}, c::Float64) 
+    return matrix + c * I 
+end 
     
 function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
-    i = [1, 2, 3, 1]
+    i = [9, 10, 1, 1]
     true_vals = outp.θ[1] 
     l = @layout [a b ; c d]
     
@@ -123,7 +133,7 @@ end
 
 function Trajectory(outp::MHoutp_θ ; save_fig=false, title="") 
     len = length(outp.θ)
-    i = [1, 2, 3, 1]
+    i = [9, 10, 1, 1]
     true_vals = outp.θ[1] 
     l = @layout [a b ; c d]
     
@@ -153,7 +163,7 @@ function Summary(outp::MHoutp_θ ; save_fig=false, title="")
 
     p1 = plot(1 .- outp.rejection_rate, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
 
-    p2 = plot(outp.eigen_ratio ./ 1e30, title="Condition Value (in 1e30)", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
 
     p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
     plot!([outp.log_posterior[1]], seriestype="hline", color="red")

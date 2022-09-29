@@ -13,7 +13,7 @@ rcut = 3.0
 
 # Initialize linear model
 FS(ϕ) = ϕ[1]
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 1, Nprop = 1, rcut=rcut), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 3, Nprop = 1, rcut=rcut), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, rcut); 
 
 get_params(pot)
@@ -27,38 +27,49 @@ end
 
 log_likelihood_Null = ConstantLikelihood() 
 
-a = randn(nparams(pot), nparams(pot)); A = a' * a; A = (A' + A)/2; ev = eigen(A).values; println(maximum(ev)/minimum(ev))
-A
-priorNormal = MvNormal(zeros(nparams(pot)), A)
+a = randn(nparams(pot), nparams(pot)); cov1 = a' * a; cov1 = (cov1' + cov1)/2; ev = eigen(cov1).values; println(maximum(ev)/minimum(ev)); # Check condition number 
+println(maximum(ev)/minimum(ev))
+
+priorNormal = MvNormal(true_mu, true_cov)
 priorUniform = FlatPrior()
 
-# real data 
-real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:10] ; # 262-vector 
 
+real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:3] ; # 262-vector 
 stm1 = StatisticalModel(log_likelihood_Null, priorNormal, pot, real_data) ;
+stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
 
-# Precision matrix, covariance matrix, and mean of posterior Gaussian calculated analytically 
-linear_post_mean_cov = precon_pre_cov_mean(stm1)
+hyperparams = precon_pre_cov_mean(stm1)
+true_mu = hyperparams["true_mean"]
+true_pre = hyperparams["true_precision"]
+true_cov = hyperparams["true_covariance"]
 
-# If we would like to make nonlinear preconditioning, then we just set it as a block matrix [Σ 0; 0 0]
-precon_precision = linear_post_mean_cov["true_precision"]
-precon_covariance = linear_post_mean_cov["true_covariance"]
-eigen(precon_precision).values
+cnum(true_pre)
+cnum(true_cov)
 
-μ_posterior = linear_post_mean_cov["true_mean"]
-eigen(A).values
-
-st1 = State_θ(zeros(nparams(pot)), zeros(nparams(pot))) ;
+# st1 = State_θ(load("init_state.jld2")["mu"], zeros(nparams(pot))) ;
+st1 = State_θ(true_mu, zeros(nparams(pot))) ;
 AMHoutp1 = MHoutp_θ() ; 
-AMHsampler1 = AdaptiveMHsampler(1e-1, st1, stm1, st1.θ, A) ; 
-Samplers.run!(st1, AMHsampler1, stm1, 30000, AMHoutp1)
+AMHsampler1 = AdaptiveMHsampler(1., st1, stm1, st1.θ, true_pre, .9) ;
+Samplers.run!(st1, AMHsampler1, stm1, 20000, AMHoutp1; trueΣ=true_cov)
+AMHoutp1 = MHoutp_θ() ; 
+Samplers.run!(st1, AMHsampler1, stm1, 200000, AMHoutp1; trueΣ=true_cov)
+Summary(AMHoutp1)
 Histogram(AMHoutp1) 
 Trajectory(AMHoutp1) 
-Summary(AMHoutp1)
+Histogram(AMHoutp1; save_fig=true, title="Hist3")
+Trajectory(AMHoutp1; save_fig=true, title="Traj3")
+Summary(AMHoutp1; save_fig=true, title="Summ")
 
-Histogram(AMHoutp1; save_fig=true, title="LinHist_CNum55")
-Trajectory(AMHoutp1; save_fig=true, title="LinTraj_CNum55")
-Summary(AMHoutp1; save_fig=true, title="LinSumm_CNum55")
+#%%
+sigma = AMHsampler1.std
+eigen(sigma * transpose(sigma)).vectors
+p = size(sigma,1)
+N = 10000000
+Sigma_est = cov([AMHsampler1.std * randn(p) for _ = 1:N])
+eigen(Sigma_est).values
+eigen(Sigma_est).vectors
+
+norm(inv(A) - cov([AMHsampler1.std * randn(p) for _ = 1:N]) )
 
 
 dict = Dict{String, Any}("st1" => st1, 

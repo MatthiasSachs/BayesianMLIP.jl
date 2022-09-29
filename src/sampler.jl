@@ -179,15 +179,31 @@ mutable struct AdaptiveMHsampler <: MHsampler
     h::Float64 
     log_post_val::Float64 
     μ ::Vector{Float64}
-    std             # std dev matrix 
-    std_shadow       # std dev matrix (to be adapted)
+    correctionΣ    # correction component of covariance matrix 
+    preconΣ # preconditioned covariance matrix 
+    std     # std dev matrix 
     t::Int64    # step index 
     n_rejected::Int64 
     lp
-end 
-# AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, precision) = AdaptiveMHsampler(h, get_lp(stm)(st.θ, stm.data, length(stm.data)), μ, [precision_to_stddev(precision) zeros(nlinparams(stm.pot), nlinparams(stm.pot)); zeros(nlinparams(stm.pot), nlinparams(stm.pot)) zeros(nlinparams(stm.pot), nlinparams(stm.pot))], [precision_to_stddev(precision) zeros(nlinparams(stm.pot), nlinparams(stm.pot)); zeros(nlinparams(stm.pot), nlinparams(stm.pot)) zeros(nlinparams(stm.pot), nlinparams(stm.pot))], 1, 0, get_lp(stm))
+    α::Float64      # damping term
+    function AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, precision, α=0.9)
+        # get log posterior value of initial state 
+        lp = get_lp(stm) 
+        initial_lp = lp(st.θ, stm.data, length(stm.data))
 
-AdaptiveMHsampler(h::Float64, st::State_θ, stm::StatisticalModel, μ, precision) = AdaptiveMHsampler(h, get_lp(stm)(st.θ, stm.data, length(stm.data)), μ, precision_to_stddev(precision), precision_to_stddev(precision), 1, 0, get_lp(stm))
+        # Quick error check for size of precision 
+        if size(precision) != (nparams(stm.pot), nparams(stm.pot)) 
+            throw(error("Size of precision matrix does not match number of parameters."))
+        end 
+
+        std = precision_to_stddev(precision)
+        cov = std * transpose(std) 
+
+        n = size(precision)[1]
+
+        new(h, initial_lp, μ, zeros(n, n), cov, std, 1, 0, lp, α);
+    end 
+end 
 
 function step!(st::State_θ, s::AdaptiveMHsampler, stm::StatisticalModel) 
     
@@ -205,15 +221,20 @@ function step!(st::State_θ, s::AdaptiveMHsampler, stm::StatisticalModel)
 
     println(s.log_post_val)
 
-    # update shadow std dev matrix at every step 
-    # s.Γ = s.Γ + (1/(s.t +1))*(((st.θ - s.μ) * transpose(st.θ - s.μ)) - s.Γ)
-    # s.μ = s.μ + (1/(s.t +1))*(st.θ - s.μ)
-    # s.t += 1 
+    # update correction covariance matrix at every step 
+    s.correctionΣ = s.correctionΣ + (1/(s.t))*(((st.θ - s.μ) * transpose(st.θ - s.μ)) - s.correctionΣ)
 
-    # # update true precision after 100 steps and every 10 steps. 
-    # if s.t > 100 && s.t % 10 == 0 
-    #     s.Σ = s.Γ 
-    # end 
+    # s.Σ = α * s.preconΣ + (1 - α) * ( ((s.t - 1)/s.t) * s.Σ + (1/s.t) * (st.θ - s.μ) * transpose(st.θ - s.μ))
+
+    # update mean 
+    s.μ = s.μ + (1/(s.t))*(st.θ - s.μ)
+    s.t += 1 
+
+    # update std dev matrix after 100 steps and every 10 steps. 
+    if s.t > 100 && s.t % 10 == 0 
+        s.std = covariance_to_stddev(s.α * s.preconΣ + (1 - s.α) * s.correctionΣ)
+    end 
+
     return s.log_post_val
 end 
 
@@ -229,7 +250,7 @@ function run!(st::State_θ, s::MHsampler, stm::StatisticalModel, Nsteps::Int64, 
         push!(outp.rejection_rate, s.n_rejected/i)
 
         # Push condition number 
-        cov = s.std * transpose(s.std)
+        cov = s.α * s.preconΣ + (1 - s.α) * s.correctionΣ
         eigenvalues = eigen(cov).values 
         minmax_ratio = maximum(eigenvalues)/minimum(eigenvalues)
         push!(outp.eigen_ratio, minmax_ratio)

@@ -29,8 +29,9 @@ end
 log_likelihood_Null = ConstantLikelihood() 
 
 # Generate positive definite matrix 
-a = randn(nlinparams(pot), nlinparams(pot)); A = a' * a; A = (A' + A)/2; eigen(A).values
-priorNormal = MvNormal(zeros(nparams(pot)), A)
+n = nparams(pot)
+a = randn(n, n); A = a' * a; A = (A' + A)/2; eigen(A).values
+priorNormal = MvNormal(zeros(nparams(pot)), [A zeros(n, n); zeros(n, n) 1e-2 * Diagonal(ones(n))])
 priorUniform = FlatPrior()
 
 # real data 
@@ -53,7 +54,7 @@ eigen(precon_precision).values
 st1 = State_θ(zeros(nparams(pot)), zeros(nparams(pot))) ;
 AMHoutp1 = MHoutp_θ() ; 
 AMHsampler1 = AdaptiveMHsampler(1., st1, stm1, st1.θ, A) ; 
-Samplers.run!(st1, AMHsampler1, stm1, 20000, AMHoutp1)
+Samplers.run!(st1, AMHsampler1, stm1, 10000, AMHoutp1)
 Histogram(AMHoutp1)
 Trajectory(AMHoutp1) 
 Summary(AMHoutp1)
