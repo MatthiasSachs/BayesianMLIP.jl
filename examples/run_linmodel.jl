@@ -1,11 +1,8 @@
-using ACE, ACEatoms, Plots, ACEflux, Flux, Zygote, LinearAlgebra, JLD2, JuLIP, StaticArrays, Statistics
-import StatsBase: sample
+using ACE, ACEatoms, ACEflux, Flux, LinearAlgebra, JLD2, JuLIP, StaticArrays, Statistics, JSON
 using BayesianMLIP, BayesianMLIP.NLModels, BayesianMLIP.Dynamics  
-using BayesianMLIP.MiniACEflux, BayesianMLIP.Utils, BayesianMLIP.Samplers, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser
-using Random: seed!, rand
-using ACEflux: FluxPotential
-import Distributions: logpdf, MvNormal
-using JSON
+using BayesianMLIP.Utils, BayesianMLIP.Samplers, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser
+import ACEflux: FluxPotential
+import Distributions: MvNormal
 
 
 at = bulk(:Cu, cubic=true) * 3; rattle!(at, 0.1) ; 
@@ -13,7 +10,7 @@ rcut = 3.0
 
 # Initialize linear model
 FS(ϕ) = ϕ[1]
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 3, Nprop = 1, rcut=rcut), GenLayer(FS), sum);
+model = Chain(Linear_ACE(;ord = 2, maxdeg = 1, Nprop = 1, rcut=rcut), GenLayer(FS), sum);
 pot = ACEflux.FluxPotential(model, rcut); 
 
 get_params(pot)
@@ -39,23 +36,23 @@ stm1 = StatisticalModel(log_likelihood_Null, priorNormal, pot, real_data) ;
 stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
 
 hyperparams = precon_pre_cov_mean(stm1)
-true_mu = hyperparams["true_mean"]
-true_pre = hyperparams["true_precision"]
-true_cov = hyperparams["true_covariance"]
+true_closed_mu_lin = hyperparams["true_mean"]
+true_closed_pre_lin = hyperparams["true_precision"]
+true_closed_cov_lin = hyperparams["true_covariance"]
 
-cnum(true_pre)
-cnum(true_cov)
+cnum(true_closed_pre_lin)
+cnum(true_closed_cov_lin)
 
 # st1 = State_θ(load("init_state.jld2")["mu"], zeros(nparams(pot))) ;
-st1 = State_θ(true_mu, zeros(nparams(pot))) ;
+st1 = State_θ(true_closed_mu_lin, zeros(nparams(pot))) ;
 AMHoutp1 = MHoutp_θ() ; 
-AMHsampler1 = AdaptiveMHsampler(1., st1, stm1, st1.θ, true_pre, .9) ;
-Samplers.run!(st1, AMHsampler1, stm1, 20000, AMHoutp1; trueΣ=true_cov)
+AMHsampler1 = MetropolisHastings(1., st1, stm1, st1.θ, true_closed_pre_lin, .9) ;
+Samplers.run!(st1, AMHsampler1, stm1, 10000, AMHoutp1; trueΣ=true_closed_cov_lin)
 AMHoutp1 = MHoutp_θ() ; 
 Samplers.run!(st1, AMHsampler1, stm1, 200000, AMHoutp1; trueΣ=true_cov)
 Summary(AMHoutp1)
-Histogram(AMHoutp1) 
-Trajectory(AMHoutp1) 
+Histogram(AMHoutp1, [1, 2, 3, 1]) 
+Trajectory(AMHoutp1, [1, 2, 3, 1]) 
 Histogram(AMHoutp1; save_fig=true, title="Hist3")
 Trajectory(AMHoutp1; save_fig=true, title="Traj3")
 Summary(AMHoutp1; save_fig=true, title="Summ")

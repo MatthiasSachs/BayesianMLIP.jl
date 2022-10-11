@@ -1,13 +1,9 @@
 module NLModels
-using ACE, ACEatoms, Flux, JuLIP, ACEflux
+using ACE, ACEatoms, Flux, JuLIP, ACEflux, Zygote, StaticArrays, NeighbourLists
 import ACEflux: FluxPotential
 using ACE: evaluate, val, AbstractConfiguration
 import JuLIP: forces, energy
-using NeighbourLists
-using Random: seed!
 using LinearAlgebra: dot
-using Zygote
-using StaticArrays
 
 import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEModel
 export get_params, nparams, set_params!, nlinparams

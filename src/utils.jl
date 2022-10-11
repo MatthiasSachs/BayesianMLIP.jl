@@ -1,14 +1,9 @@
 module Utils
-using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statistics
+using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statistics, ThreadsX, Flux, FluxOptTools, Zygote
 using ACEatoms: neighbourlist
 using Distributions: logpdf, MvNormal
-using LinearAlgebra 
-using BayesianMLIP.Outputschedulers, BayesianMLIP
-using BayesianMLIP.NLModels
-using Flux, FluxOptTools, Zygote, ACEflux
-import BayesianMLIP.NLModels: nparams, design_matrix, svecs2vec
-import LinearAlgebra: eigen 
-using ThreadsX
+using BayesianMLIP.Outputschedulers, BayesianMLIP, BayesianMLIP.NLModels
+import BayesianMLIP.NLModels: nparams, nlinparams, design_matrix, svecs2vec
 
 export StatisticalModel, params, nparams
 export set_params!, get_params, get_params!
@@ -26,6 +21,10 @@ mutable struct StatisticalModel{LL,PR,POT}
     pot::POT
     data
 end 
+
+nparams(stm::StatisticalModel) = nparams(stm.pot)
+
+nlinparams(stm::StatisticalModel) = nlinparams(stm.pot)
 
 function cnum(mat) 
     ev = eigen(mat).values 
@@ -106,54 +105,64 @@ function dampen(matrix::Matrix{Float64}, c::Float64)
     return matrix + c * I 
 end 
     
-function Histogram(outp::MHoutp_θ ; save_fig=false, title="") 
-    i = [9, 10, 1, 1]
+function Histogram(outp::MHoutp_θ, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
     true_vals = outp.θ[1] 
-    l = @layout [a b ; c d]
+    l = @layout [a b c; d e f]
     
-    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, bins=:scott)
+    p1 = histogram([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, xtickfontsize=5, xrotation=30)
     plot!([true_vals[i[1]]], seriestype="vline", color="red")
 
-    p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1)
+    p2 = histogram([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, xtickfontsize=5, xrotation=30)
     plot!([true_vals[i[2]]], seriestype="vline", color="red")
 
-    p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1)
+    p3 = histogram([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, xtickfontsize=5, xrotation=30)
     plot!([true_vals[i[3]]], seriestype="vline", color="red")
 
-    p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1)
+    p4 = histogram([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, xtickfontsize=5, xrotation=30)
     plot!([true_vals[i[4]]], seriestype="vline", color="red")
+    
+    p5 = histogram([elem[i[5]] for elem in outp.θ], title="Index $(i[5]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, xtickfontsize=5, xrotation=30)
+    plot!([true_vals[i[5]]], seriestype="vline", color="red")
+
+    p6 = histogram([elem[i[6]] for elem in outp.θ], title="Index $(i[6]) Trajectory", legend=false, titlefontsize=10, ytickfontsize=1, xtickfontsize=5, xrotation=30)
+    plot!([true_vals[i[6]]], seriestype="vline", color="red")
 
     if save_fig == true 
-        plot(p1, p2, p3, p4, layout=l)
+        plot(p1, p2, p3, p4, p5, p6, layout=l)
         savefig("./plots/$title.png")
     else 
-        plot(p1, p2, p3, p4, layout=l)
+        plot(p1, p2, p3, p4, p5, p6, layout=l)
     end 
 end 
 
-function Trajectory(outp::MHoutp_θ ; save_fig=false, title="") 
+function Trajectory(outp::MHoutp_θ, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
     len = length(outp.θ)
-    i = [9, 10, 1, 1]
     true_vals = outp.θ[1] 
-    l = @layout [a b ; c d]
+    l = @layout [a b c; d e f]
     
-    p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p1 = plot([elem[i[1]] for elem in outp.θ], title="Index $(i[1]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=5, yrotation=45)
     plot!([true_vals[i[1]]], seriestype="hline", color="red")
 
-    p2 = plot([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p2 = plot([elem[i[2]] for elem in outp.θ], title="Index $(i[2]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=5, yrotation=45)
     plot!([true_vals[i[2]]], seriestype="hline", color="red")
 
-    p3 = plot([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p3 = plot([elem[i[3]] for elem in outp.θ], title="Index $(i[3]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=5, yrotation=45)
     plot!([true_vals[i[3]]], seriestype="hline", color="red")
 
-    p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p4 = plot([elem[i[4]] for elem in outp.θ], title="Index $(i[4]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=5, yrotation=45)
     plot!([true_vals[i[4]]], seriestype="hline", color="red")
 
+    p5 = plot([elem[i[5]] for elem in outp.θ], title="Index $(i[5]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=5, yrotation=45)
+    plot!([true_vals[i[5]]], seriestype="hline", color="red")
+
+    p6 = plot([elem[i[6]] for elem in outp.θ], title="Index $(i[6]) Trajectory", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=5, yrotation=45)
+    plot!([true_vals[i[6]]], seriestype="hline", color="red")
+
     if save_fig == true 
-        plot(p1, p2, p3, p4, layout=l)
+        plot(p1, p2, p3, p4, p5, p6, layout=l)
         savefig("./plots/$title.png")
     else 
-        plot(p1, p2, p3, p4, layout=l)
+        plot(p1, p2, p3, p4, p5, p6, layout=l)
     end 
 end 
 
@@ -161,9 +170,10 @@ function Summary(outp::MHoutp_θ ; save_fig=false, title="")
     len = length(outp.θ)
     l = @layout [a b ; c d] 
 
-    p1 = plot(1 .- outp.rejection_rate, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p1 = plot(outp.acceptance_rate_lin, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!(outp.acceptance_rate_nlin, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="green")
 
-    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p2 = plot(outp.eigen_ratio./ 1e16, title="Condition Value (1e16)", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
 
     p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
     plot!([outp.log_posterior[1]], seriestype="hline", color="red")

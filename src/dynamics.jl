@@ -6,7 +6,6 @@ using Random: seed!, rand
 using LinearAlgebra: dot
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
-import BayesianMLIP.NLModels: Hamiltonian, energy, forces
 
 export run!, step!, Integrator 
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB, BADODAB

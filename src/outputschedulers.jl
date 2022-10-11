@@ -15,11 +15,13 @@ atoutp() = atoutp([])
 mutable struct MHoutp_θ <: outputscheduler 
     θ
     log_posterior 
-    rejection_rate 
+    acceptance_rate 
     eigen_ratio
     covariance_metric 
+    acceptance_rate_lin
+    acceptance_rate_nlin
 end 
-MHoutp_θ() = MHoutp_θ([], [], [], [], []) 
+MHoutp_θ() = MHoutp_θ([], [], [], [], [], [], []) 
 
 mutable struct BAOABoutp_θ <: outputscheduler
     θ 
