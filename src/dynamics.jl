@@ -6,6 +6,7 @@ using Random: seed!, rand
 using LinearAlgebra: dot
 using BayesianMLIP.Outputschedulers
 using BayesianMLIP.NLModels
+import BayesianMLIP.NLModels: energy, forces
 
 export run!, step!, Integrator 
 export VelocityVerlet, PositionVerlet, EulerMaruyama, BAOAB, BADODAB
@@ -136,10 +137,7 @@ function run!(d::Integrator, V, at::Atoms, Nsteps::Int; outp = nothing)
     if outp === nothing 
         for i in 1:Nsteps 
             step!(d, V, at)
-
-            if i % 100 == 0  # print every 10 steps 
-                println(i)
-            end 
+            println(i)
         end 
     else 
         # push!(outp, at)

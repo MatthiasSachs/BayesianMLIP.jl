@@ -1,64 +1,66 @@
 using ACE, ACEatoms, ACEflux, Flux, LinearAlgebra, JLD2, JuLIP, StaticArrays, Statistics, JSON
-using BayesianMLIP, BayesianMLIP.NLModels, BayesianMLIP.Dynamics
-using BayesianMLIP.Utils, BayesianMLIP.Samplers, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser
-import ACEflux: FluxPotential
+using BayesianMLIP, BayesianMLIP.NLModels, BayesianMLIP.Utils, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser, BayesianMLIP.globalSamplers, BayesianMLIP.conditionalSamplers
+import ACEflux: FluxPotential 
 import Distributions: MvNormal
 
-at = bulk(:Cu, cubic=true) * 3; rattle!(at, 0.1) ; 
-
-# Initialize Finnis-Sinclair Model 
-rcut = 3.0
-# FS is the transformation of the basis evaluated at each atomic environment, then you sum everything up 
-FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10; 
+rcut = 3.0; FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10; 
 model = Chain(Linear_ACE(;ord = 2, maxdeg = 1, Nprop = 2, rcut=rcut), GenLayer(FS));
 pot = ACEflux.FluxPotential(model, rcut); 
 
-function log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = ωE/(3*length(d.at)) )
-    # Compute the log_likelihood for one data point: log P(θ|d)
-    -ωE * (d.E - energy(pot, d.at))^2 -  ωF * sum(sum(abs2, g - f) 
-                     for (g, f) in zip(forces(pot, d.at), d.F))
-end 
-
+log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = ωE/(3*length(d.at)) ) = -ωE * (d.E - energy(pot, d.at))^2 -  ωF * sum(sum(abs2, g - f) for (g, f) in zip(forces(pot, d.at), d.F))
 log_likelihood_Null = ConstantLikelihood() 
-
-# Generate positive definite matrix 
 priorNormal = MvNormal(zeros(nparams(pot)), I)
 priorUniform = FlatPrior()
-
-# real data 
-real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:3] ; # 262-vector 
+real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:5] ; # 262-vector 
 
 
-stm1 = StatisticalModel(log_likelihood_Null, priorNormal, pot, real_data) ;
-stm1 = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
+# stm1 = StatisticalModel(log_likelihood_Null, priorNormal, pot, real_data) ;
+stm = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
 
-hyperparams = precon_pre_cov_mean(stm1)
-true_closed_mu_lin = hyperparams["true_mean"]
-true_closed_pre_lin = hyperparams["true_precision"]
-true_closed_cov_lin = hyperparams["true_covariance"]
+# Run MCMC to get to minimum, and then run SGLD (linear parameters) 
+st1 = State_θ(zeros(6)) ; 
+outp1 = MHoutp_θ() ; 
+s1 = nonlinearMetropolis(1e1, st1, stm; α=0.9);
+conditionalSamplers.run!(st1, s1, stm, 10000, outp1)
 
-singDec = svd(true_closed_pre_lin)
-true_closed_pre_nlin = Symmetric(singDec.U * Diagonal(singDec.S .^2) * transpose(singDec.U))
+st2 = State_θ(mean(outp1.θ)) ;
+outp2 = MHoutp_θ() ; 
+s2 = nonlinearSGLD(4e-8, st2, stm, 1; α=0.9); 
+conditionalSamplers.run!(st2, s2, stm, 6000, outp2)
+Summary(outp2)
+Histogram(outp2)
+Trajectory(outp2) 
 
-m = nlinparams(stm1)
+# Run MCMC to get to minimum, and then run SGLD (nonlinear parameters) 
+st3 = State_θ(zeros(6)) ; 
+outp3 = MHoutp_θ() ; 
+s3 = nonlinearMetropolis(1e1, st3, stm; α=0.9);
+conditionalSamplers.run!(st3, s3, stm, 10000, outp3)
 
-# Run Gibbs sampler on conditional distribution of linear components 
-init_mu = vcat(true_closed_mu_lin, zeros(m)) 
+st4 = State_θ(mean(outp3.θ)) ;
+outp4 = MHoutp_θ() ; 
+s4 = nonlinearSGLD(1e-9, st4, stm, 1; α=0.9); 
+conditionalSamplers.run!(st4, s4, stm, 6000, outp4)
+Summary(outp4)
+Histogram(outp4)
+Trajectory(outp4) 
 
-st1 = State_θ(init_mu, zeros(nparams(pot))) ; 
-AMHoutp1 = MHoutp_θ() ; 
-Gibbsampler1 = GibbsSampler(1e1, 1e4, st1, stm1, true_closed_mu_lin, true_closed_mu_lin, true_closed_pre_lin, true_closed_pre_nlin, 0.9, 0.99); 
-Samplers.run!(st1, Gibbsampler1, stm1, 30000, AMHoutp1, 0.) 
 
-Summary(AMHoutp1)
-Histogram(AMHoutp1)
-Trajectory(AMHoutp1) 
-Histogram(AMHoutp1; save_fig=true, title="GibbsNonLinHist2")
-Trajectory(AMHoutp1; save_fig=true, title="GibbsNonLinTraj2")
-Summary(AMHoutp1; save_fig=true, title="GibbsNonLinSumm2")
 
-dict = Dict{String, Any}("st1" => st1, 
-                         "AMHsampler1"  => AMHsampler1, 
-                         "stm1" => stm1, 
-                         "AMHoutp1" => AMHoutp1)
-save("continue_running.jld2", dict)
+st5 = State_θ(zeros(6)) ; 
+outp5 = MHoutp_θ() ; 
+s5 = GibbsSampler(linearMetropolis(1e1, st5, stm; α=0.9), nonlinearMetropolis(1e1, st5, stm; α=0.9), 1.);
+@time conditionalSamplers.run!(st5, s5, stm, 10000, outp5)
+
+st6 = State_θ(mean(outp5.θ)) 
+outp6 = MHoutp_θ() ; 
+s6 = GibbsSampler(linearMetropolis(1e1, st6, stm; α=0.9), nonlinearSGLD(4e-8, st6, stm, 1; α=0.9), .5);
+@time conditionalSamplers.run!(st6, s6, stm, 1000, outp6)
+
+Summary(outp6)
+Histogram(outp6)
+Trajectory(outp6)
+
+A = randn(5000, 5000) 
+B = randn(5000, 5000) 
+@time A * B

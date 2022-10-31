@@ -8,7 +8,6 @@ using LinearAlgebra: dot
 import ACE: set_params!, nparams, params, evaluate, LinearACEModel, AbstractACEModel
 export get_params, nparams, set_params!, nlinparams
 export energy, forces, site_energy, site_forces, basis_energy, basis_forces
-export design_matrix
 
 function nparams(pot::FluxPotential) 
     return length(pot.model.layers[1].weight)
@@ -70,15 +69,6 @@ function basis_forces(pot::FluxPotential, at::AbstractAtoms)
     V_basis = ACEatoms.basis(V)
     forces(V_basis, at)
 end 
-
-function design_matrix(pot::FluxPotential, at::AbstractAtoms) 
-    # Finds the design matrix 
-    bsis_energy = transpose(basis_energy(pot, at))
-    bsis_forces = reduce(hcat, svecs2vec.(basis_forces(pot, at)))
-    return vcat(bsis_energy, bsis_forces)
-end 
-
-
 
 mat2svecs(M::AbstractArray{T}, nc::Int) where {T} =   
       collect(reinterpret(SVector{nc, T}, M))

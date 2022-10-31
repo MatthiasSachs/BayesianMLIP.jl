@@ -20,8 +20,11 @@ mutable struct MHoutp_θ <: outputscheduler
     covariance_metric 
     acceptance_rate_lin
     acceptance_rate_nlin
+    F1 
+    F2 
+    F3 
 end 
-MHoutp_θ() = MHoutp_θ([], [], [], [], [], [], []) 
+MHoutp_θ() = MHoutp_θ([], [], [], [], [], [], [], [], [], []) 
 
 mutable struct BAOABoutp_θ <: outputscheduler
     θ 

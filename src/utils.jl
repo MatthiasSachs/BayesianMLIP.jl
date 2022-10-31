@@ -1,16 +1,16 @@
 module Utils
-using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statistics, ThreadsX, Flux, FluxOptTools, Zygote
+using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statistics, ThreadsX, Flux, FluxOptTools, Zygote, JuLIP
 using ACEatoms: neighbourlist
 using Distributions: logpdf, MvNormal
 using BayesianMLIP.Outputschedulers, BayesianMLIP, BayesianMLIP.NLModels
-import BayesianMLIP.NLModels: nparams, nlinparams, design_matrix, svecs2vec
+import BayesianMLIP.NLModels: nparams, nlinparams, svecs2vec
 
 export StatisticalModel, params, nparams
 export set_params!, get_params, get_params!
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
-export get_precon_params, get_Y, get_Σ_Tilde, precon_pre_cov_mean
+export get_precon_params, precon_pre_cov_mean
 export precision_to_covariance, precision_to_stddev, covariance_to_precision, covariance_to_stddev
 export dampen, cnum
 
@@ -29,6 +29,13 @@ nlinparams(stm::StatisticalModel) = nlinparams(stm.pot)
 function cnum(mat) 
     ev = eigen(mat).values 
     return maximum(ev)/minimum(ev)
+end 
+
+function design_matrix(pot::FluxPotential, at::AbstractAtoms) 
+    # Finds the design matrix 
+    bsis_energy = transpose(basis_energy(pot, at))
+    bsis_forces = reduce(hcat, svecs2vec.(basis_forces(pot, at)))
+    return vcat(bsis_energy, bsis_forces)
 end 
 
 design_matrix(stm::StatisticalModel) = reduce(vcat, [design_matrix(stm.pot, stm.data[i].at) for i in 1:length(stm.data)])
@@ -62,20 +69,25 @@ function precon_pre_cov_mean(stm::StatisticalModel)
 
     # Compute precision matrix (stable) 
     cΣ = svd(Σ_Tilde); Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U); Σt_sqrtΨ =  Σt_sqrt * Ψ
-    precision_ = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
+    lin_precision = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
 
     # Compute true covariance using SVD
     # May be numerically unstable due to bad condition number
-    Precision_svd = svd(precision_)
+    Precision_svd = svd(lin_precision)
     covariance_sqrt = Precision_svd.U * Diagonal(1.0 ./ sqrt.(Precision_svd.S)) 
-    Covariance = covariance_sqrt * transpose(covariance_sqrt)
+    lin_covariance = covariance_sqrt * transpose(covariance_sqrt)
 
     # Compute true mean
-    μ_posterior = Vector{Float64}(β * Covariance * transpose(Ψ) * Y)
+    μ_posterior = Vector{Float64}(β * lin_covariance * transpose(Ψ) * Y)
 
-    dict = Dict{String, Any}("true_precision" => precision_, 
-                             "true_covariance"  => Covariance, 
-                             "true_mean" => μ_posterior) 
+    # Compute true precision of nonlinear by squaring singular values 
+    singDec = svd(lin_precision) 
+    nlin_precision = Symmetric(singDec.U * Diagonal(singDec.S .^2) * transpose(singDec.U))
+
+    dict = Dict{String, Any}("lin_precision" => lin_precision, 
+                             "lin_mean" => μ_posterior, 
+                             "nlin_precision" => nlin_precision, 
+                             "nlin_mean" => zeros(length(μ_posterior))) 
 
     return dict
 end 
@@ -90,10 +102,6 @@ end
 function precision_to_covariance(Σ_inv) 
     std = precision_to_stddev(Σ_inv)
     return std * transpose(std)
-end 
-
-function covariance_to_precision(Σ) 
-    
 end 
 
 function covariance_to_stddev(Σ) 
@@ -170,16 +178,20 @@ function Summary(outp::MHoutp_θ ; save_fig=false, title="")
     len = length(outp.θ)
     l = @layout [a b ; c d] 
 
-    p1 = plot(outp.acceptance_rate_lin, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!(outp.acceptance_rate_nlin, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="green")
+    p1 = plot(outp.acceptance_rate, title="Acceptance Rate", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!(outp.acceptance_rate_lin, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="green")
+    plot!(outp.acceptance_rate_nlin, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
 
-    p2 = plot(outp.eigen_ratio./ 1e16, title="Condition Value (1e16)", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    plot!(outp.covariance_metric, title="Covariance Metric", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
 
     p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
     plot!([outp.log_posterior[1]], seriestype="hline", color="red")
 
     p4 = plot(outp.covariance_metric, title="Covariance Metric", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-
+    # plot!(outp.F1, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="blue")
+    # plot!(outp.F2, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
+    # plot!(outp.F3, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="green")
     
 
     if save_fig == true 
@@ -211,33 +223,34 @@ struct ConstantLikelihood end
 
 struct FlatPrior end
 
-
-
-function get_ll(stm::StatisticalModel)
+function get_ll(stm::StatisticalModel, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm))))
     function ll(θ,d) 
-        BayesianMLIP.NLModels.set_params!(stm.pot,θ)
+        BayesianMLIP.NLModels.set_params!(stm.pot, transf_std * θ + transf_μ)
         return stm.log_likelihood(stm.pot, d)
     end
     return ll
 end
 
-function get_ll(stm::StatisticalModel{ConstantLikelihood,PR}) where {PR}
+function get_ll(stm::StatisticalModel{ConstantLikelihood,PR}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {PR}
     return (θ,d)  -> 0.0
 end
 
-function get_lpr(stm::StatisticalModel) 
+function get_lpr(stm::StatisticalModel, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) 
     function lpr(θ) 
-        return logpdf(stm.prior, θ)
+        return logpdf(stm.prior, transf_std * θ + transf_μ)
     end
     return lpr
 end
 
-function get_lpr(stm::StatisticalModel{LL,FlatPrior}) where {LL}
+function get_lpr(stm::StatisticalModel{LL,FlatPrior}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {LL}
     return θ -> 0.0
 end
 
-function get_lp(stm::StatisticalModel)
-    ll, lpr =  get_ll(stm), get_lpr(stm)
+function get_lp(stm::StatisticalModel, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm))))
+    twoK = nparams(stm) 
+    @assert length(transf_μ) == twoK
+    @assert size(transf_std) == (twoK, twoK)
+    ll, lpr =  get_ll(stm, transf_μ, transf_std), get_lpr(stm, transf_μ, transf_std)
     return get_lp(ll, lpr)
 end
 
@@ -249,54 +262,56 @@ function get_lp(ll, lpr)
 end
 
 
-function get_gll(stm::StatisticalModel)
+function get_gll(stm::StatisticalModel, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm))))
     # gradient of log likelihood wrt θ
+    
     function gll(θ,d) 
-        set_params!(stm.pot,θ)
-        p = Flux.params(stm.pot)
-        gradvec = zeros(p)
+        set_params!(stm.pot, transf_std * θ + transf_μ)
+        p = Flux.params(stm.pot.model)
         dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
-        copy!(gradvec,dL) 
-        return gradvec
+        gradvec = zeros(p)
+        copy!(gradvec, dL) 
+        return vcat(gradvec[1:2:end], gradvec[2:2:end])
     end
     return gll
 end
 
-
-function get_gll(stm::StatisticalModel{ConstantLikelihood, PR}) where {PR}
-    p = Flux.params(stm.pot)
+function get_gll(stm::StatisticalModel{ConstantLikelihood, PR}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {PR}
     function gll(θ,d) 
-        return zeros(p)
+        return zeros(nparams(stm))
     end
     return gll
 end
 
-function get_glpr(stm::StatisticalModel{LL,PR}) where {LL, PR<:Distributions.Sampleable }
+function get_glpr(stm::StatisticalModel{LL,PR}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {LL, PR<:Distributions.Sampleable}
     # gradient of log prior wrt θ
     function glpr(θ::AbstractArray{T}) where {T<:Real} 
-        return Zygote.gradient(θ->logpdf(stm.prior, θ), θ)[1]
+        return Zygote.gradient(θ->logpdf(stm.prior, transf_std * θ + transf_μ), θ)[1]
     end
     return glpr
 end
 
-function get_glpr(stm::StatisticalModel{LL,FlatPrior}) where {LL}
+function get_glpr(stm::StatisticalModel{LL,FlatPrior}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {LL}
     # gradient of log prior wrt θ
-    p = Flux.params(stm.pot)
     function glpr(θ::AbstractArray{T}) where {T<:Real} 
-        return zeros(p)
+        return zeros(nparams(stm))
     end
     return glpr
 end 
 
 
-function get_glp(stm::StatisticalModel)
-    gll, glpr =  get_gll(stm), get_glpr(stm)
+function get_glp(stm::StatisticalModel, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm))))
+    twoK = nparams(stm) 
+    @assert length(transf_μ) == twoK
+    @assert size(transf_std) == (twoK, twoK)
+    gll, glpr = get_gll(stm, transf_μ, transf_std), get_glpr(stm, transf_μ, transf_std)
     return get_glp(gll, glpr)
 end
 
 function get_glp(gll, glpr)
     function glp(θ::AbstractArray, batch, total::Int64)
-        return (total/length(batch)) * sum(ThreadsX.map(d -> gll(θ,d), batch)) + glpr(θ)
+        return (total/length(batch)) * sum(gll(θ, d) for d in batch) + glpr(θ)
+        # return (total/length(batch)) * sum(ThreadsX.map(d -> gll(θ, d), batch)) + glpr(θ)
     end
     return glp
 end

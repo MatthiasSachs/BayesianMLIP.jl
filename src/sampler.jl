@@ -10,6 +10,7 @@ mutable struct State_θ
     θ
     θ_prime 
 end 
+State_θ(θ) = State_θ(θ, zeros(length(θ)))
 
 abstract type sampler end 
 abstract type BAOsampler <: sampler end 
@@ -126,10 +127,16 @@ mutable struct GibbsSampler <: MCMCsampler
     lp 
     α_lin::Float64 
     α_nlin::Float64 
+    transf_μ 
+    transf_std
     function GibbsSampler(h_lin::Float64, h_nlin::Float64, st::State_θ, stm::StatisticalModel, μ_lin, μ_nlin, precision_lin, precision_nlin, α_lin=0.9, α_nlin=0.1)
-        # get log posterior value of initial state 
-        lp = get_lp(stm)
-        initial_lp = lp(st.θ, stm.data, length(stm.data)) 
+        K = nlinparams(stm)
+        @assert length(μ_lin) == K 
+        @assert length(μ_nlin) == K 
+        @assert size(precision_lin) == (K, K)
+        @assert size(precision_nlin) == (K, K)
+
+
 
         std_lin = precision_to_stddev(precision_lin) 
         std_nlin = precision_to_stddev(precision_nlin) # transform this
@@ -137,40 +144,52 @@ mutable struct GibbsSampler <: MCMCsampler
         precon_cov_lin = std_lin * transpose(std_lin) 
         precon_cov_nlin = std_nlin * transpose(std_nlin) 
 
-        n = size(precision_lin)[1] 
+        # get the proper basis transformation of linear and nonlinear
+        transf_μ = vcat(μ_lin, μ_nlin)
+        transf_std = [std_lin zeros(K, K); zeros(K, K) std_nlin]
 
-        new(h_lin, h_nlin, initial_lp, μ_lin, zeros(n, n), precon_cov_lin, std_lin, 
-            μ_nlin, zeros(n, n), precon_cov_nlin, std_nlin, 0, 0, 0, 0, lp, α_lin, α_nlin)
+        lp = get_lp(stm, transf_μ, transf_std)
+        initial_lp = lp(st.θ, stm.data, length(stm.data)) 
+
+        new(h_lin, h_nlin, initial_lp, zeros(K), zeros(K, K), I, std_lin, 
+            zeros(K), zeros(K, K), I, std_nlin, 0, 0, 0, 0, lp, α_lin, α_nlin, transf_μ, transf_std)
     end 
 end 
 
 function lin_step!(st::State_θ, s::GibbsSampler, stm::StatisticalModel) 
 
-    nl = nlinparams(stm.pot)
-    lin_proposal_step = sqrt(s.h_lin) * s.std_lin * randn(nl)
-    θ_proposal = st.θ + vcat(lin_proposal_step, zeros(nl)) 
+    K = nlinparams(stm)
+    lin_proposal_step = sqrt(s.h_lin) * randn(K)
+    θ_proposal = st.θ + vcat(lin_proposal_step, zeros(K)) 
     proposal_log_prob = s.lp(θ_proposal, stm.data, length(stm.data)) 
 
-    print(string(s.log_post_val) * " --?--> " * string(proposal_log_prob) * " : ")
+    # print(string(s.log_post_val) * " --?--> " * string(proposal_log_prob) * " : ")
 
     if log(rand()) < min(0, proposal_log_prob - s.log_post_val) # Accept 
-        st.θ = θ_proposal                                       # Update to proposed state
-        s.log_post_val = proposal_log_prob                      # Update log_posterior value at new θ
+        st.θ = θ_proposal
+        s.log_post_val = proposal_log_prob
         s.n_accepted_lin += 1 
     end 
-    println(s.log_post_val)
+    # println(s.log_post_val)
 
     lin_comp_of_state = st.θ[1:Int(end/2)]
 
+
     # update correction covariance matrix at every step 
-    s.correctionΣ_lin = s.correctionΣ_lin + (1/(s.t_lin + 1))*(((lin_comp_of_state - s.μ_lin) * transpose(lin_comp_of_state - s.μ_lin)) - s.correctionΣ_lin)
+    s.correctionΣ_lin = s.correctionΣ_lin + (1/(s.t_lin + 1))*(((s.std_lin * lin_comp_of_state) * transpose(s.std_lin * lin_comp_of_state)) - s.correctionΣ_lin)
+    println(norm(covariance_to_stddev((1 - s.α_lin) * s.correctionΣ_lin)))
+    
+    # println(norm(s.correctionΣ_lin))
 
     # update mean 
-    s.μ_lin = s.μ_lin + (1/(s.t_lin + 1))*(lin_comp_of_state - s.μ_lin)
+    s.μ_lin = s.μ_lin + (1/(s.t_lin + 1))*(s.std_lin * lin_comp_of_state)
 
     # update std dev matrix after 100 steps and every 10 steps. 
     if s.t_lin > 100 && s.t_lin % 10 == 0 
         s.std_lin = covariance_to_stddev(s.α_lin * s.preconΣ_lin + (1 - s.α_lin) * s.correctionΣ_lin)
+        transf_μ = vcat(s.μ_lin, s.μ_nlin)
+        transf_std = [s.std_lin zeros(K, K); zeros(K, K) s.std_nlin] 
+        s.lp = get_lp(stm, transf_μ, transf_std)
     end 
 
     s.t_lin += 1 
