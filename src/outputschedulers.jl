@@ -1,10 +1,7 @@
 module Outputschedulers
-using ACE 
-using JuLIP
-using BayesianMLIP.NLModels
-export simpleoutp, atoutp, outputscheduler, feed!, MHoutp
-export outputscheduler, MHoutp_θ, BAOABoutp_θ, BADODABoutp_θ, atoutp, SGLDoutp_θ 
-using ACE: val
+export atoutp, outp, delete_first!, delete_last!
+
+
 abstract type outputscheduler end
 
 mutable struct atoutp <: outputscheduler 
@@ -12,7 +9,7 @@ mutable struct atoutp <: outputscheduler
 end 
 atoutp() = atoutp([])
 
-mutable struct MHoutp_θ <: outputscheduler 
+mutable struct outp <: outputscheduler 
     θ
     log_posterior 
     acceptance_rate 
@@ -20,32 +17,64 @@ mutable struct MHoutp_θ <: outputscheduler
     covariance_metric 
     acceptance_rate_lin
     acceptance_rate_nlin
-    F1 
-    F2 
-    F3 
+    mass 
 end 
-MHoutp_θ() = MHoutp_θ([], [], [], [], [], [], [], [], [], []) 
+outp() = outp([], [], [], [], [], [], [], []) 
 
-mutable struct BAOABoutp_θ <: outputscheduler
-    θ 
-    θ_prime 
-    log_posterior
+function delete_first!(otp::outp, first_n::Int64) 
+    if length(otp.θ) >= first_n  
+        otp.θ = otp.θ[first_n+1:end]
+    end 
+    if length(otp.log_posterior) >= first_n  
+        otp.log_posterior = otp.log_posterior[first_n+1:end]
+    end 
+    if length(otp.acceptance_rate) >= first_n  
+        otp.acceptance_rate = otp.acceptance_rate[first_n+1:end]
+    end 
+    if length(otp.eigen_ratio) >= first_n  
+        otp.eigen_ratio = otp.eigen_ratio[first_n+1:end]
+    end 
+    if length(otp.covariance_metric) >= first_n  
+        otp.covariance_metric = otp.covariance_metric[first_n+1:end]
+    end 
+    if length(otp.acceptance_rate_lin) >= first_n  
+        otp.acceptance_rate_lin = otp.acceptance_rate_lin[first_n+1:end]
+    end 
+    if length(otp.acceptance_rate_nlin) >= first_n  
+        otp.acceptance_rate_nlin = otp.acceptance_rate_nlin[first_n+1:end]
+    end 
+    if length(otp.mass) >= first_n  
+        otp.mass = otp.mass[first_n+1:end]
+    end 
 end 
-BAOABoutp_θ() = BAOABoutp_θ([], [], []) 
 
-mutable struct BADODABoutp_θ <: outputscheduler
-    θ 
-    θ_prime 
-    log_posterior
-    ξ
+function delete_last!(otp::outp, first_n::Int64) 
+    if length(otp.θ) >= first_n  
+        otp.θ = otp.θ[1:first_n]
+    end 
+    if length(otp.log_posterior) >= first_n  
+        otp.log_posterior = otp.log_posterior[1:end - first_n]
+    end 
+    if length(otp.acceptance_rate) >= first_n  
+        otp.acceptance_rate = otp.acceptance_rate[1:end - first_n]
+    end 
+    if length(otp.eigen_ratio) >= first_n  
+        otp.eigen_ratio = otp.eigen_ratio[1:end - first_n]
+    end 
+    if length(otp.covariance_metric) >= first_n  
+        otp.covariance_metric = otp.covariance_metric[1:end - first_n]
+    end 
+    if length(otp.acceptance_rate_lin) >= first_n  
+        otp.acceptance_rate_lin = otp.acceptance_rate_lin[1:end - first_n]
+    end 
+    if length(otp.acceptance_rate_nlin) >= first_n  
+        otp.acceptance_rate_nlin = otp.acceptance_rate_nlin[1:end - first_n]
+    end 
+    if length(otp.mass) >= first_n  
+        otp.mass = otp.mass[1:end - first_n]
+    end 
 end 
-BADODABoutp_θ() = BADODABoutp_θ([], [], [], []) 
 
-mutable struct SGLDoutp_θ <: outputscheduler 
-    θ 
-    log_posterior 
-end 
-SGLDoutp_θ() = SGLDoutp_θ([], [])
 
 end # end module 
 

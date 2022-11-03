@@ -159,12 +159,12 @@ end
 BAOAB_θ(h::T, state::State_θ, stm::StatisticalModel, mb_size::Int64 ; γ::T=1.0, β::T=1.0) where {T<:Real} = BAOAB_θ(h, get_glp(stm)(state.θ, [stm.data[i] for i in sample(1:length(stm.data), mb_size, replace = false)], length(stm.data)), β, γ, mb_size, get_glp(stm))
 
 function step!(st::State_θ, s::BAOAB_θ, stm::StatisticalModel) 
-    st.θ_prime += 0.5 * s.h * s.F
+    st.θ_prime -= 0.5 * s.h * s.F
     st.θ += 0.5 * s.h * st.θ_prime 
     st.θ_prime = exp(-s.h * s.γ) * st.θ_prime + sqrt((1/s.β) * (1 - exp(-2*s.γ*s.h))) * randn(length(st.θ_prime)) 
     st.θ += 0.5 * s.h * st.θ_prime
     s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data))
-    st.θ_prime += 0.5 * s.h * s.F
+    st.θ_prime -= 0.5 * s.h * s.F
 end 
 
 

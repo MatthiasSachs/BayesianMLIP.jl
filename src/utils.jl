@@ -113,7 +113,7 @@ function dampen(matrix::Matrix{Float64}, c::Float64)
     return matrix + c * I 
 end 
     
-function Histogram(outp::MHoutp_θ, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
+function Histogram(outp::outp, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
     true_vals = outp.θ[1] 
     l = @layout [a b c; d e f]
     
@@ -143,7 +143,7 @@ function Histogram(outp::MHoutp_θ, i = [1, 2, 3, 4, 5, 6]; save_fig=false, titl
     end 
 end 
 
-function Trajectory(outp::MHoutp_θ, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
+function Trajectory(outp::outp, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
     len = length(outp.θ)
     true_vals = outp.θ[1] 
     l = @layout [a b c; d e f]
@@ -174,7 +174,7 @@ function Trajectory(outp::MHoutp_θ, i = [1, 2, 3, 4, 5, 6]; save_fig=false, tit
     end 
 end 
 
-function Summary(outp::MHoutp_θ ; save_fig=false, title="") 
+function Summary(outp::outp ; save_fig=false, title="") 
     len = length(outp.θ)
     l = @layout [a b ; c d] 
 
@@ -182,13 +182,14 @@ function Summary(outp::MHoutp_θ ; save_fig=false, title="")
     plot!(outp.acceptance_rate_lin, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="green")
     plot!(outp.acceptance_rate_nlin, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
 
-    p2 = plot(outp.eigen_ratio, title="Condition Value", legend=false, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
-    plot!(outp.covariance_metric, title="Covariance Metric", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
+    p2 = plot(outp.eigen_ratio, title="Covariance Info", label="Condition #", legend=:topleft, titlefontsize=10,xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="blue")
+    plot!(outp.covariance_metric, label="Norm", legend=:topleft, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
 
     p3 = plot(outp.log_posterior, title="Log-Posterior Values", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
     plot!([outp.log_posterior[1]], seriestype="hline", color="red")
 
-    p4 = plot(outp.covariance_metric, title="Covariance Metric", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+    p4 = plot(outp.mass, title="Mass Matrix Info", legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6)
+
     # plot!(outp.F1, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="blue")
     # plot!(outp.F2, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="red")
     # plot!(outp.F3, legend=false, titlefontsize=10, xtick=false, xlabel="$len Steps", xguidefontsize=8, ytickfontsize=6, color="green")
@@ -286,7 +287,7 @@ end
 function get_glpr(stm::StatisticalModel{LL,PR}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {LL, PR<:Distributions.Sampleable}
     # gradient of log prior wrt θ
     function glpr(θ::AbstractArray{T}) where {T<:Real} 
-        return Zygote.gradient(θ->logpdf(stm.prior, transf_std * θ + transf_μ), θ)[1]
+        return - Zygote.gradient(θ->logpdf(stm.prior, transf_std * θ + transf_μ), θ)[1]
     end
     return glpr
 end
