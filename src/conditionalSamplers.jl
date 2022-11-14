@@ -83,9 +83,9 @@ mutable struct linearMetropolis <: cMCMCSampler
     function linearMetropolis(h::Float64, st::State_θ, stm::StatisticalModel, α=0.9) 
         K = nlinparams(stm)  
     
-        hp = precon_pre_cov_mean(stm) 
+        hp = preconChangeOfBasis(stm) 
         transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+        transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
     
         lp = get_lp(stm, transf_mean, transf_std) 
         initial_lp = lp(st.θ, stm.data, length(stm.data))
@@ -158,9 +158,9 @@ mutable struct nonlinearMetropolis <: cMCMCSampler
 
         K = nlinparams(stm)  
 
-        hp = precon_pre_cov_mean(stm) 
+        hp = preconChangeOfBasis(stm) 
         transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+        transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
 
         lp = get_lp(stm, transf_mean, transf_std) 
         initial_lp = lp(st.θ, stm.data, length(stm.data))
@@ -261,9 +261,9 @@ mutable struct linearStochasticGD <: cGradientSampler
         @assert mb_size <= length(stm.data) 
         K = nlinparams(stm)
 
-        hp = precon_pre_cov_mean(stm) 
+        hp = preconChangeOfBasis(stm) 
         transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+        transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
 
         lp = get_lp(stm, transf_mean, transf_std) 
         glp = get_glp(stm, transf_mean, transf_std)
@@ -350,15 +350,19 @@ mutable struct linearSGLD <: cGradientSampler
     α
     transf_mean 
     transf_std 
-    function linearSGLD(h::Float64, st::State_θ, stm::StatisticalModel, mb_size::Int64; β::Float64=1.0, α::Float64=0.9)
+    function linearSGLD(h::Float64, st::State_θ, stm::StatisticalModel, mb_size::Int64; β::Float64=1.0, α::Float64=0.9, transf_mean = nothing, transf_std = nothing)
         # linearSGLD(4e-11, st, stm, 1; β=1e-5, α=0.9) ;
         @assert mb_size <= length(stm.data) 
         K = nlinparams(stm)
 
-        hp = precon_pre_cov_mean(stm) 
-        transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
-
+        if transf_mean === nothing && transf_std === nothing 
+            hp = preconChangeOfBasis(stm) 
+            transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
+            transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
+        end 
+        @assert length(transf_mean) == 2K 
+        @assert size(transf_std) == (2K, 2K)
+        
         lp = get_lp(stm, transf_mean, transf_std) 
         glp = get_glp(stm, transf_mean, transf_std)
 
@@ -381,29 +385,36 @@ function step!(st::State_θ, s::linearSGLD, stm::StatisticalModel)
     # step size 4e-11
     K = nlinparams(stm)
 
-    st.θ -= s.h * [s.Σ zeros(K, K); zeros(K, K) zeros(K, K)] * s.F + sqrt(2 * s.h / s.β) * vcat(s.std * randn(K), zeros(K))
+
+    flow = s.h * [s.Σ .* [1e6, 1e3, 1] zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
+    noise = sqrt(2 * s.h / s.β) * vcat(s.std .* [1e3, 1.7e1, 1] * randn(K), zeros(K))
+    # flow = s.h * [Diagonal(diag(s.Σ)) zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
+    # noise = sqrt(2 * s.h / s.β) * vcat(Diagonal(sqrt.(diag(s.Σ))) * randn(K), zeros(K))
+    # flow = s.h * [s.Σ zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
+    # noise = sqrt(2 * s.h / s.β) * vcat(s.std * randn(K), zeros(K))
+
+    st.θ -= flow + noise
     
     s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data)); s.F[K+1:end] = zeros(K) 
 
     new_log_post_val = s.lp(st.θ, stm.data, length(stm.data))
 
     println(string(s.log_post_val) * " --*--> " * string(new_log_post_val) * " : " * string(new_log_post_val))
-    println(s.h * [s.Σ zeros(K, K); zeros(K, K) zeros(K, K)] * s.F)
-    println(sqrt(2 * s.h / s.β) * vcat(s.std * randn(K), zeros(K)))
+    println(flow)
+    println(noise)
     s.log_post_val = new_log_post_val
 
-    # update linear correction covariance matrix at every step 
-    lin_comp_of_state = st.θ[1:K]
-    
-    s.correctionΣ = s.correctionΣ + (1/(s.t))*(( (lin_comp_of_state - s.μ) * transpose(lin_comp_of_state - s.μ)) - s.correctionΣ)
+    s.correctionΣ = s.correctionΣ + (1/(s.t))*(( (st.θ[1:K] - s.μ) * transpose(st.θ[1:K] - s.μ)) - s.correctionΣ)
+    s.μ = s.μ + (1/(s.t)) * (st.θ[1:K] - s.μ)
 
-    # update linear mean 
-    s.μ = s.μ + (1/(s.t)) * (lin_comp_of_state - s.μ)
+    # s.correctionΣ = s.correctionΣ + (1/(s.t))*(( (s.F[1:K] - s.μ) * transpose(s.F[1:K] - s.μ)) - s.correctionΣ)
+    # s.μ = s.μ + (1/(s.t)) * (s.F[1:K] - s.μ)
 
     # update linear std dev matrix after 100 steps and every 20 steps. 
-    if s.t > 50 && s.t % 10 == 0 
-        decreasing_α = s.α * (0.99999^s.t)
-        s.Σ = decreasing_α * s.preconΣ .+ ((1 - decreasing_α) * s.correctionΣ)
+    if s.t > 30 && s.t % 10 == 0 
+        decreasing_α = s.α * (0.9999^s.t)
+        s.Σ = decreasing_α * s.preconΣ .+ ((1 - decreasing_α) * s.correctionΣ) 
+        s.Σ = Diagonal(ones(3))
         s.std = covariance_to_stddev(s.Σ)
     end 
 
@@ -422,20 +433,19 @@ mutable struct nonlinearSGLD <: cGradientSampler
     correctionΣ 
     preconΣ 
     Σ
-    Σsquared    # covariance squared, which is needed for adapative conditioning for NONLINEAR 
     std 
     t 
     α
     transf_mean 
     transf_std 
-    function nonlinearSGLD(h::Float64, st::State_θ, stm::StatisticalModel, mb_size::Int64, preconΣ=Diagonal(ones(nlinparams(stm))); β::Float64=1.0, α::Float64=0.9)
-        # nonlinearSGLD(5e-9, st, stm, 1; β=1e-5, α=0.9) ;
+    function nonlinearSGLD(h::Float64, st::State_θ, stm::StatisticalModel, mb_size::Int64; β::Float64=1.0, α::Float64=0.9)
+        # nonlinearSGLD(5e-14, st1, stm, 1; β=1e-7, α=1.0) ;
         @assert mb_size <= length(stm.data) 
         K = nlinparams(stm)
 
-        hp = precon_pre_cov_mean(stm) 
+        hp = preconChangeOfBasis(stm) 
         transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+        transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
 
         lp = get_lp(stm, transf_mean, transf_std) 
         glp = get_glp(stm, transf_mean, transf_std)
@@ -450,9 +460,8 @@ mutable struct nonlinearSGLD <: cGradientSampler
         preconΣ=Diagonal(ones(nlinparams(stm)))
         Σ = α * preconΣ + (1 - α) * correctionΣ
         std = Diagonal(ones(K)) 
-        Σsquared = Diagonal(ones(K))
 
-        new(h, lp, glp, initial_lp, F, β, mb_size, μ, correctionΣ, preconΣ, Σ, Σsquared, std, 1, α, transf_mean, transf_std)
+        new(h, lp, glp, initial_lp, F, β, mb_size, μ, correctionΣ, preconΣ, Σ, std, 1, α, transf_mean, transf_std)
     end 
 end 
 
@@ -460,9 +469,10 @@ function step!(st::State_θ, s::nonlinearSGLD, stm::StatisticalModel)
     # step size 
     K = nlinparams(stm)
 
-    flow = s.h * [zeros(K, K) zeros(K, K); zeros(K, K) s.Σsquared] * s.F
+    # flow = s.h * [zeros(K, K) zeros(K, K); zeros(K, K) Diagonal(ones(3)) .* [1e9, 1e5, 1e2]] * s.F
+    # noise = sqrt(2 * s.h / s.β) * vcat(zeros(K), randn(K))
+    flow = s.h * [zeros(K, K) zeros(K, K); zeros(K, K) s.Σ .* [1e12, 1e6, 1]] * s.F
     noise = sqrt(2 * s.h / s.β) * vcat(zeros(K), s.std * randn(K))
-
     st.θ -= flow + noise
 
     s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data)); s.F[1:K] = zeros(K) 
@@ -470,6 +480,7 @@ function step!(st::State_θ, s::nonlinearSGLD, stm::StatisticalModel)
     new_log_post_val = s.lp(st.θ, stm.data, length(stm.data))
 
     println(string(s.log_post_val) * " --*--> " * string(new_log_post_val) * " : " * string(new_log_post_val))
+    println(st.θ)
     println(flow)
     println(noise)
 
@@ -485,11 +496,9 @@ function step!(st::State_θ, s::nonlinearSGLD, stm::StatisticalModel)
 
     # update nonlinear std dev matrix after 100 steps and every 20 steps. 
     if s.t > 20 && s.t % 10 == 0 
-        decreasing_α = s.α * (0.999999^s.t)
+        decreasing_α = s.α * (0.9999^s.t)
         s.Σ = decreasing_α * s.preconΣ .+ ((1 - decreasing_α) * s.correctionΣ)
-        Σ_svd = svd(s.Σ)
-        D = Σ_svd.U * Diagonal(Σ_svd.S) 
-        s.Σsquared = D * transpose(D) 
+        s.Σ = Diagonal(ones(3))
         s.std = covariance_to_stddev(s.Σ)
     end 
 
@@ -514,14 +523,14 @@ mutable struct nonlinearSGLD2 <: cGradientSampler
     α
     transf_mean 
     transf_std 
-    function nonlinearSGLD2(h::Float64, st::State_θ, stm::StatisticalModel, mb_size::Int64, preconΣ=Diagonal(ones(nlinparams(stm))); β::Float64=1.0, α::Float64=0.9)
+    function nonlinearSGLD2(h::Float64, st::State_θ, stm::StatisticalModel, mb_size::Int64 ; β::Float64=1.0, α::Float64=0.9)
         # nonlinearSGLD(5e-9, st, stm, 1; β=1e-5, α=0.9) ;
         @assert mb_size <= length(stm.data) 
         K = nlinparams(stm)
 
-        hp = precon_pre_cov_mean(stm) 
+        hp = preconChangeOfBasis(stm) 
         transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+        transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
 
         lp = get_lp(stm, transf_mean, transf_std) 
         glp = get_glp(stm, transf_mean, transf_std)
@@ -546,9 +555,8 @@ function step!(st::State_θ, s::nonlinearSGLD2, stm::StatisticalModel)
     # step size 
     K = nlinparams(stm)
 
-    flow = s.h * [zeros(K, K) zeros(K, K); zeros(K, K) s.Σ .* [3.16e6, 1.7e3, 1]] * s.F
+    flow = s.h * [zeros(K, K) zeros(K, K); zeros(K, K) s.Σ] * s.F
     noise = sqrt(2 * s.h / s.β) * vcat(zeros(K), s.std * randn(K))
-
     st.θ -= flow + noise
 
     s.F = s.glp(st.θ, [stm.data[i] for i in sample(1:length(stm.data), s.mb_size, replace = false)], length(stm.data)); s.F[1:K] = zeros(K) 
@@ -556,19 +564,18 @@ function step!(st::State_θ, s::nonlinearSGLD2, stm::StatisticalModel)
     new_log_post_val = s.lp(st.θ, stm.data, length(stm.data))
 
     println(string(s.log_post_val) * " --*--> " * string(new_log_post_val) * " : " * string(new_log_post_val))
+    println(st.θ)
     println(flow)
     println(noise)
 
     s.log_post_val = new_log_post_val
 
     # update nonlinear correction covariance matrix at every step 
-    nlin_comp_of_state = st.θ[K+1:end]
-    prev_μ = s.μ
 
-    s.correctionΣ = s.correctionΣ + (1/(s.t))*(( (s.F[K+1:end] - s.μ) * transpose(s.F[K+1:end] - prev_μ)) - s.correctionΣ)
+    s.correctionΣ = s.correctionΣ + (1/(s.t))*(( (st.θ[K+1:end] - s.μ) * transpose(st.θ[K+1:end] - s.μ)) - s.correctionΣ)
     
     # update nonlinear mean 
-    s.μ = s.μ + (1/(s.t)) * (s.F[K+1:end] - s.μ)
+    s.μ = s.μ + (1/(s.t)) * (st.θ[K+1:end] - s.μ)
 
     # update nonlinear std dev matrix after 100 steps and every 20 steps. 
     if s.t > 20 && s.t % 10 == 0 
@@ -577,7 +584,6 @@ function step!(st::State_θ, s::nonlinearSGLD2, stm::StatisticalModel)
         Σ_svd = svd(s.Σ)
         D = Σ_svd.U * Diagonal(Σ_svd.S) 
         s.Σsquared = D * transpose(D) 
-        s.Σsquared = Diagonal(ones(K))
         s.std = covariance_to_stddev(s.Σ)
     end 
 
@@ -633,9 +639,9 @@ mutable struct linearBAOAB <: cGradientSampler
         K = nlinparams(stm)
 
         if transf_mean === nothing && transf_std === nothing
-            hp = precon_pre_cov_mean(stm) 
+            hp = preconChangeOfBasis(stm) 
             transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-            transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+            transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
         else 
             @assert length(transf_mean) == 2K 
             @assert size(transf_std) == (2K, 2K)
@@ -725,9 +731,9 @@ mutable struct nonlinearBAOAB <: cGradientSampler
         @assert mb_size <= length(stm.data) 
         K = nlinparams(stm)
 
-        hp = precon_pre_cov_mean(stm) 
+        hp = preconChangeOfBasis(stm) 
         transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
-        transf_std = [precision_to_stddev(hp["lin_precision"]) zeros(K, K); zeros(K, K) precision_to_stddev(hp["nlin_precision"])]
+        transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
 
         lp = get_lp(stm, transf_mean, transf_std) 
         glp = get_glp(stm, transf_mean, transf_std)

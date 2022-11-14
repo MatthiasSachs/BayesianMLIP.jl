@@ -50,7 +50,7 @@ end
 
 function delete_last!(otp::outp, first_n::Int64) 
     if length(otp.θ) >= first_n  
-        otp.θ = otp.θ[1:first_n]
+        otp.θ = otp.θ[1:end - first_n]
     end 
     if length(otp.log_posterior) >= first_n  
         otp.log_posterior = otp.log_posterior[1:end - first_n]

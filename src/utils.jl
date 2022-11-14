@@ -10,9 +10,9 @@ export set_params!, get_params, get_params!
 export get_lp, get_ll, get_lpr, get_glp, get_gll, get_glpr
 export Histogram, Trajectory, Summary
 export FlatPrior, ConstantLikelihood, get_precon, getmb 
-export get_precon_params, precon_pre_cov_mean
+export preconChangeOfBasis, cnum
 export precision_to_covariance, precision_to_stddev, covariance_to_precision, covariance_to_stddev
-export dampen, cnum
+export get_Σ_Tilde, get_Y, design_matrix
 
 
 mutable struct StatisticalModel{LL,PR,POT} 
@@ -26,9 +26,9 @@ nparams(stm::StatisticalModel) = nparams(stm.pot)
 
 nlinparams(stm::StatisticalModel) = nlinparams(stm.pot)
 
-function cnum(mat) 
-    ev = eigen(mat).values 
-    return maximum(ev)/minimum(ev)
+function cnum(mat::Matrix{Float64}) 
+    ev = LinearAlgebra.eigen(mat).values 
+    return maximum(ev) / minimum(ev)
 end 
 
 function design_matrix(pot::FluxPotential, at::AbstractAtoms) 
@@ -58,7 +58,7 @@ function get_Σ_Tilde(stm::StatisticalModel)
     return LinearAlgebra.Diagonal(diag)
 end 
 
-function precon_pre_cov_mean(stm::StatisticalModel) 
+function preconChangeOfBasis(stm::StatisticalModel) 
     # Calculates the closed-form precision matrix, covariance matrix, and true mean
 
     Ψ = design_matrix(stm)
@@ -67,26 +67,26 @@ function precon_pre_cov_mean(stm::StatisticalModel)
     Σ_Tilde = get_Σ_Tilde(stm)
     β = 1.0 
 
-    # Compute precision matrix (stable) 
     cΣ = svd(Σ_Tilde); Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U); Σt_sqrtΨ =  Σt_sqrt * Ψ
     lin_precision = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
 
-    # Compute true covariance using SVD
-    # May be numerically unstable due to bad condition number
-    Precision_svd = svd(lin_precision)
-    covariance_sqrt = Precision_svd.U * Diagonal(1.0 ./ sqrt.(Precision_svd.S)) 
-    lin_covariance = covariance_sqrt * transpose(covariance_sqrt)
+    H = Diagonal(sqrt.(diag(Σ_Tilde))) * Ψ 
+    svdH = svd(H) 
+    
+    lin_covariance = svdH.V * Diagonal(1 ./ (1 .+ svdH.S.^2)) * svdH.Vt 
+    nlin_covariance = svdH.V * Diagonal((1 ./ (1 .+ svdH.S.^2).^2)) * svdH.Vt 
+    lin_std = svdH.V * Diagonal(sqrt.(1 ./ (1 .+ svdH.S.^2))) 
+    nlin_std = svdH.V * Diagonal(1 ./ (1 .+ svdH.S.^2))
 
     # Compute true mean
     μ_posterior = Vector{Float64}(β * lin_covariance * transpose(Ψ) * Y)
 
-    # Compute true precision of nonlinear by squaring singular values 
-    singDec = svd(lin_precision) 
-    nlin_precision = Symmetric(singDec.U * Diagonal(singDec.S .^2) * transpose(singDec.U))
-
-    dict = Dict{String, Any}("lin_precision" => lin_precision, 
+    dict = Dict{String, Any}("lin_covariance" => lin_covariance, 
+                             "lin_precision" => lin_precision, 
+                             "lin_std" => lin_std, 
                              "lin_mean" => μ_posterior, 
-                             "nlin_precision" => nlin_precision, 
+                             "nlin_covariance" => nlin_covariance, 
+                             "nlin_std" => nlin_std, 
                              "nlin_mean" => zeros(length(μ_posterior))) 
 
     return dict
@@ -109,9 +109,6 @@ function covariance_to_stddev(Σ)
     return singValDec.U * Diagonal(sqrt.(singValDec.S))
 end 
 
-function dampen(matrix::Matrix{Float64}, c::Float64) 
-    return matrix + c * I 
-end 
     
 function Histogram(outp::outp, i = [1, 2, 3, 4, 5, 6]; save_fig=false, title="") 
     true_vals = outp.θ[1] 
@@ -205,20 +202,20 @@ function Summary(outp::outp ; save_fig=false, title="")
 end 
 
 
-function get_precon_params(stm::StatisticalModel)
-    basis = stm.pot.model[1].m.basis
+# function get_precon_params(stm::StatisticalModel)
+#     basis = stm.pot.model[1].m.basis
 
-    # outputs matrix of K × ∑_{d=1}^D N_d, where D is the number of data in stm.data
-    # and N_d is the number of atomic environments in the 'd'th data
+#     # outputs matrix of K × ∑_{d=1}^D N_d, where D is the number of data in stm.data
+#     # and N_d is the number of atomic environments in the 'd'th data
 
-    mat = hcat([hcat(ThreadsX.map(i -> [B.val for B in ACE.evaluate(basis, [ ACE.State(rr = r)  for r in NeighbourLists.neigs(neighbourlist(d.at, stm.pot.cutoff), i)[2]] |> ACEConfig)], 1:length(d.at))...) for d in stm.data]...)
+#     mat = hcat([hcat(ThreadsX.map(i -> [B.val for B in ACE.evaluate(basis, [ ACE.State(rr = r)  for r in NeighbourLists.neigs(neighbourlist(d.at, stm.pot.cutoff), i)[2]] |> ACEConfig)], 1:length(d.at))...) for d in stm.data]...)
 
-    std_dev = [std(mat[k, :]) for k in 1:length(basis)]
+#     std_dev = [std(mat[k, :]) for k in 1:length(basis)]
 
-    avg = [mean(mat[k, :]) for k in 1:length(basis)]
+#     avg = [mean(mat[k, :]) for k in 1:length(basis)]
 
-    return hcat(avg, std_dev)
-end 
+#     return hcat(avg, std_dev)
+# end 
 
 struct ConstantLikelihood end
 
@@ -272,7 +269,7 @@ function get_gll(stm::StatisticalModel, transf_μ::Vector{Float64}=zeros(nparams
         dL = Zygote.gradient(()->stm.log_likelihood(stm.pot, d), p)
         gradvec = zeros(p)
         copy!(gradvec, dL) 
-        return vcat(gradvec[1:2:end], gradvec[2:2:end])
+        return - transf_std * vcat(gradvec[1:2:end], gradvec[2:2:end]) 
     end
     return gll
 end
@@ -287,7 +284,8 @@ end
 function get_glpr(stm::StatisticalModel{LL,PR}, transf_μ::Vector{Float64}=zeros(nparams(stm)), transf_std::Union{Matrix, Diagonal}=Diagonal(ones(nparams(stm)))) where {LL, PR<:Distributions.Sampleable}
     # gradient of log prior wrt θ
     function glpr(θ::AbstractArray{T}) where {T<:Real} 
-        return - Zygote.gradient(θ->logpdf(stm.prior, transf_std * θ + transf_μ), θ)[1]
+        grad = Zygote.gradient(θ->logpdf(stm.prior, transf_std * θ + transf_μ), θ)[1] 
+        return - grad 
     end
     return glpr
 end
@@ -324,21 +322,13 @@ function getmb(data, mbsize)
     return [data[i] for i in sample(1:length(data), mbsize, replace = false)]
 end 
 
-struct eigen_arr values end 
-
-# eigen function for compatibility with UniformScaling 
-function eigen(A)
-    return eigen_arr([1, 1])
-end 
-
-
-function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
-    # Only works for FS-type models (i.e., exactly only the first layer is of type Linear_ACE; and no other layers have parameters)
-    linear_ace_layer = pot.model.layers[1]
-    scaling = ACE.scaling(linear_ace_layer.m.basis,p)
-    scaling[1] = 1.0
-    return  Diagonal([w*s for s in scaling for w in [1.0, rel_scaling]])
-end
+# function get_precon(pot::FluxPotential, rel_scaling::T, p::T) where {T<:Real}
+#     # Only works for FS-type models (i.e., exactly only the first layer is of type Linear_ACE; and no other layers have parameters)
+#     linear_ace_layer = pot.model.layers[1]
+#     scaling = ACE.scaling(linear_ace_layer.m.basis,p)
+#     scaling[1] = 1.0
+#     return  Diagonal([w*s for s in scaling for w in [1.0, rel_scaling]])
+# end
 
 
 
