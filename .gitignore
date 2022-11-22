@@ -2,4 +2,3 @@ Manifest.toml
 Data/
 Run_Data/
 .vscode/settings.json
-linear_run.jld2

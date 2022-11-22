@@ -1,5 +1,6 @@
 module Utils
 using Plots, ACE, NeighbourLists, Distributions, ACEflux, LinearAlgebra, Statistics, ThreadsX, Flux, FluxOptTools, Zygote, JuLIP
+using ACE: LinearACEModel
 using ACEatoms: neighbourlist
 using Distributions: logpdf, MvNormal
 using BayesianMLIP.Outputschedulers, BayesianMLIP, BayesianMLIP.NLModels
@@ -31,12 +32,20 @@ function cnum(mat::Matrix{Float64})
     return maximum(ev) / minimum(ev)
 end 
 
+function design_matrix(model::LinearACEModel, at::AbstractAtoms) 
+    # Finds the design matrix 
+    bsis_energy = transpose(basis_energy(model, at))
+    bsis_forces = reduce(hcat, svecs2vec.(basis_forces(model, at)))
+    return vcat(bsis_energy, bsis_forces)
+end 
+
 function design_matrix(pot::FluxPotential, at::AbstractAtoms) 
     # Finds the design matrix 
     bsis_energy = transpose(basis_energy(pot, at))
     bsis_forces = reduce(hcat, svecs2vec.(basis_forces(pot, at)))
     return vcat(bsis_energy, bsis_forces)
 end 
+
 
 design_matrix(stm::StatisticalModel) = reduce(vcat, [design_matrix(stm.pot, stm.data[i].at) for i in 1:length(stm.data)])
 
@@ -55,7 +64,7 @@ end
 function get_Σ_Tilde(stm::StatisticalModel)
     at_lengths = [length(d.at) for d in stm.data]
     diag = reduce(vcat, [vcat([1], 3 * elem * ones(3 * elem)) for elem in at_lengths])
-    return LinearAlgebra.Diagonal(diag)
+    return diag
 end 
 
 function preconChangeOfBasis(stm::StatisticalModel) 
@@ -63,14 +72,13 @@ function preconChangeOfBasis(stm::StatisticalModel)
 
     Ψ = design_matrix(stm)
     Y = get_Y(stm)
-    Σ_0 = I
+    Σ_0 = I 
     Σ_Tilde = get_Σ_Tilde(stm)
     β = 1.0 
 
-    cΣ = svd(Σ_Tilde); Σt_sqrt = Diagonal(sqrt.(cΣ.S)) * transpose(cΣ.U); Σt_sqrtΨ =  Σt_sqrt * Ψ
-    lin_precision = Σ_0 + β * transpose(Σt_sqrtΨ) * Σt_sqrtΨ
+    H = Diagonal(sqrt.(Σ_Tilde)) * Ψ
+    lin_precision = Σ_0 + β * (transpose(H) * H)
 
-    H = Diagonal(sqrt.(diag(Σ_Tilde))) * Ψ 
     svdH = svd(H) 
     
     lin_covariance = svdH.V * Diagonal(1 ./ (1 .+ svdH.S.^2)) * svdH.Vt 

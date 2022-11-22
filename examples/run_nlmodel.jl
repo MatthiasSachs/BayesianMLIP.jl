@@ -1,30 +1,69 @@
-using ACE, ACEatoms, ACEflux, Flux, LinearAlgebra, JLD2, JuLIP, StaticArrays, Statistics, JSON, Plots, BenchmarkTools
+using ACE, ACEatoms, Flux, ACEflux, LinearAlgebra, JLD2, JuLIP, StaticArrays, Statistics, JSON, Plots, BenchmarkTools
 using BayesianMLIP, BayesianMLIP.NLModels, BayesianMLIP.Utils, BayesianMLIP.Outputschedulers, BayesianMLIP.json_parser, BayesianMLIP.globalSamplers, BayesianMLIP.conditionalSamplers
 import ACEflux: FluxPotential 
 import Distributions: MvNormal
+using ACE: O3, SymmetricBasis, LinearACEModel, params
 
-rcut = 3.0; FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10; 
-model = Chain(Linear_ACE(;ord = 2, maxdeg = 1, Nprop = 2, rcut=rcut), GenLayer(FS));
-pot = ACEflux.FluxPotential(model, rcut); 
+real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json"))[1:end] ; 
+at = real_data[1].at ;
 
-Mu = randn(6); sig=randn(6, 6); Sig = sig' * sig
+# Construct ACE basis w/ appropriate hyperparameters
+order = 1; maxdeg = 5; 
+r0 = rnn(:Cu) ; rcut = 10.0
+Bsel = SimpleSparseBasis(order, maxdeg)
+B1p = ACE.Utils.RnYlm_1pbasis(;
+    maxdeg = maxdeg, 
+    Bsel = Bsel, 
+    r0 = r0, 
+    trans = PolyTransform(2, r0),
+    rin = 0.65*r0, 
+    rcut = rcut, 
+    pcut = 2,
+    pin = 2, 
+    constants = false
+);
+φ = ACE.Invariant()
+basis = SymmetricBasis(φ, B1p, O3(), Bsel)
+
+# Construct LinearACEModel with 2 copies of paramters 
+Nprop = 2;
+c = zeros(Nprop, length(basis));
+lin_model = LinearACEModel(basis, ACEflux.matrix2svector(c); evaluator = :standard)
+
+# Construct nonlinear model 
+FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10; 
+nl_model = Chain(Linear_ACE(c, lin_model), GenLayer(FS)); 
+pot = FluxPotential(nl_model, rcut); 
+
+nparams(pot)
+nlinparams(pot)
+get_params(pot)
+
+twoK = nparams(pot)
+
+Mu = zeros(twoK); sig = randn(twoK, twoK); Sig = sig'*sig; 
 log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = ωE/(3*length(d.at)) ) = -ωE * (d.E - energy(pot, d.at))^2 -  ωF * sum(sum(abs2, g - f) for (g, f) in zip(forces(pot, d.at), d.F))
+
 log_likelihood_Null = ConstantLikelihood() 
 priorNormal = MvNormal(Mu, Sig)
 priorUniform = FlatPrior()
-real_data = getData(JSON.parsefile("/z1-mbahng/mbahng/mlearn/data/Cu/training.json"))[1:10] ; 
-# [-91.23915391, -66.78643017, 66.45443175]
-stm = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
+real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json"))[1:end] ; 
 
-st = State_θ(vcat([-91.23915391, -66.78643017, 66.45443175], zeros(3)), randn(6)) 
+stm = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
+begin 
+    # Check that setting all lin params = 1, nonlin=0 and evaluating energy gives equal energy value as sum of 1st row of design matrix 
+    set_params!(pot, vcat(ones(6), zeros(6)))
+    @show energy(pot, at) == sum(design_matrix(stm)[1, :])
+end 
+
+st = State_θ(randn(twoK), randn(twoK)) 
 output = outp() ; 
-s = linearSGLD(1e-13, st, stm, 1; β=Inf, α=0.9) ;
-conditionalSamplers.run!(st, s, stm, 20000, output) 
-delete_first!(output, 100)
-delete_last!(output, 10) 
-s.Σ
+
+s = linearMetropolis(1e-1, st, stm) ;
+s = linearSGLD(1e-1, st, stm, 1; β=1.0, α=0.9, transf_mean = zeros(twoK), transf_std = Diagonal(ones(twoK))) ;
+conditionalSamplers.run!(st, s, stm, 1000, output) 
 Summary(output)
-Histogram(output)
+Histogram(output, [1, 2, 3, 4, 5, 6])
 Trajectory(output) 
 
 scatter(

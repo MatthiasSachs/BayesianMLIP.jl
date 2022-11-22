@@ -34,5 +34,3 @@ StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 ThreadsX = "ac1d9e8a-700a-412c-b207-f0111f4b6c0d"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
-[compat]
-ACE = "<0.12.34"

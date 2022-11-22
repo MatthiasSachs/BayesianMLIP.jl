@@ -382,16 +382,10 @@ mutable struct linearSGLD <: cGradientSampler
 end 
 
 function step!(st::State_θ, s::linearSGLD, stm::StatisticalModel)
-    # step size 4e-11
     K = nlinparams(stm)
 
-
-    flow = s.h * [s.Σ .* [1e6, 1e3, 1] zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
-    noise = sqrt(2 * s.h / s.β) * vcat(s.std .* [1e3, 1.7e1, 1] * randn(K), zeros(K))
-    # flow = s.h * [Diagonal(diag(s.Σ)) zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
-    # noise = sqrt(2 * s.h / s.β) * vcat(Diagonal(sqrt.(diag(s.Σ))) * randn(K), zeros(K))
-    # flow = s.h * [s.Σ zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
-    # noise = sqrt(2 * s.h / s.β) * vcat(s.std * randn(K), zeros(K))
+    flow = s.h * [s.Σ zeros(K, K); zeros(K, K) zeros(K, K)] * s.F
+    noise = sqrt(2 * s.h / s.β) * vcat(s.std * randn(K), zeros(K))
 
     st.θ -= flow + noise
     
@@ -400,8 +394,8 @@ function step!(st::State_θ, s::linearSGLD, stm::StatisticalModel)
     new_log_post_val = s.lp(st.θ, stm.data, length(stm.data))
 
     println(string(s.log_post_val) * " --*--> " * string(new_log_post_val) * " : " * string(new_log_post_val))
-    println(flow)
-    println(noise)
+    # println(flow)
+    # println(noise)
     s.log_post_val = new_log_post_val
 
     s.correctionΣ = s.correctionΣ + (1/(s.t))*(( (st.θ[1:K] - s.μ) * transpose(st.θ[1:K] - s.μ)) - s.correctionΣ)
@@ -414,7 +408,7 @@ function step!(st::State_θ, s::linearSGLD, stm::StatisticalModel)
     if s.t > 30 && s.t % 10 == 0 
         decreasing_α = s.α * (0.9999^s.t)
         s.Σ = decreasing_α * s.preconΣ .+ ((1 - decreasing_α) * s.correctionΣ) 
-        s.Σ = Diagonal(ones(3))
+        # s.Σ = Diagonal(ones(K))
         s.std = covariance_to_stddev(s.Σ)
     end 
 

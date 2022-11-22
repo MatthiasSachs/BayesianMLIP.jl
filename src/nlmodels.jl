@@ -48,23 +48,23 @@ function site_forces(pot::FluxPotential, at::AbstractAtoms, i::Int64)
     return ith_force
 end 
 
-function basis_energy(pot::FluxPotential, at::AbstractAtoms)
+basis_energy(pot::FluxPotential, at::AbstractAtoms) = basis_energy(pot.model[1].m, at)
+
+basis_forces(pot::FluxPotential, at::AbstractAtoms) = basis_forces(pot.model[1].m, at)
+
+function basis_energy(model::LinearACEModel, at::AbstractAtoms)
     # Gets all the basis evaluation of entire configuration 
-    basis = pot.model.layers[1].m.basis
-    no_lin_copies = size(pot.model.layers[1].weight)[1]
-    cCu = get_params(pot)[1:Int(nparams(pot)/no_lin_copies)]
-    models = Dict(:Cu => ACE.LinearACEModel(basis, cCu; evaluator = :standard))
+    cCu = params(model)
+    models = Dict(:Cu => ACE.LinearACEModel(model.basis, cCu))
     V = ACEatoms.ACESitePotential(models)
     V_basis = ACEatoms.basis(V)
     energy(V_basis, at)
 end 
 
-function basis_forces(pot::FluxPotential, at::AbstractAtoms)
+function basis_forces(model::LinearACEModel, at::AbstractAtoms)
     # Gets all the basis evaluation of entire configuration 
-    basis = pot.model.layers[1].m.basis
-    no_lin_copies = size(pot.model.layers[1].weight)[1]
-    cCu = get_params(pot)[1:Int(nparams(pot)/no_lin_copies)]
-    models = Dict(:Cu => ACE.LinearACEModel(basis, cCu; evaluator = :standard))
+    cCu = params(model)
+    models = Dict(:Cu => ACE.LinearACEModel(model.basis, cCu))
     V = ACEatoms.ACESitePotential(models)
     V_basis = ACEatoms.basis(V)
     forces(V_basis, at)
