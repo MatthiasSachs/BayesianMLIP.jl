@@ -4,8 +4,6 @@ import ACEflux: FluxPotential
 import Distributions: MvNormal
 using ACE: O3, SymmetricBasis, LinearACEModel, params
 
-real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json"))[1:end] ; 
-at = real_data[1].at ;
 
 # Construct ACE basis w/ appropriate hyperparameters
 order = 1; maxdeg = 5; 
@@ -22,13 +20,13 @@ B1p = ACE.Utils.RnYlm_1pbasis(;
     pin = 2, 
     constants = false
 );
-φ = ACE.Invariant()
-basis = SymmetricBasis(φ, B1p, O3(), Bsel)
+φ = ACE.Invariant();
+basis = SymmetricBasis(φ, B1p, O3(), Bsel);
 
 # Construct LinearACEModel with 2 copies of paramters 
 Nprop = 2;
 c = zeros(Nprop, length(basis));
-lin_model = LinearACEModel(basis, ACEflux.matrix2svector(c); evaluator = :standard)
+lin_model = LinearACEModel(basis, ACEflux.matrix2svector(c); evaluator = :standard);
 
 # Construct nonlinear model 
 FS(ϕ) = ϕ[1] + sqrt(abs(ϕ[2]) + 1/100) - 1/10; 
@@ -39,6 +37,7 @@ nparams(pot)
 nlinparams(pot)
 get_params(pot)
 
+K = nlinparams(pot)
 twoK = nparams(pot)
 
 Mu = zeros(twoK); sig = randn(twoK, twoK); Sig = sig'*sig; 
@@ -47,21 +46,29 @@ log_likelihood_L2(pot::ACEflux.FluxPotential, d; ωE = 1.0, ωF = ωE/(3*length(
 log_likelihood_Null = ConstantLikelihood() 
 priorNormal = MvNormal(Mu, Sig)
 priorUniform = FlatPrior()
-real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json"))[1:end] ; 
+real_data = getData(JSON.parsefile("./Run_Data/Real_Data/training_test/Cu/training.json")) ; 
 
 stm = StatisticalModel(log_likelihood_L2, priorUniform, pot, real_data) ;
-begin 
-    # Check that setting all lin params = 1, nonlin=0 and evaluating energy gives equal energy value as sum of 1st row of design matrix 
-    set_params!(pot, vcat(ones(6), zeros(6)))
-    @show energy(pot, at) == sum(design_matrix(stm)[1, :])
-end 
+
+Ψ = design_matrix(stm) 
+cond(Ψ)
+
+hp = preconChangeOfBasis(stm) 
+transf_mean = vcat(hp["lin_mean"], hp["nlin_mean"])
+transf_std = [hp["lin_std"] zeros(K, K); zeros(K, K) hp["nlin_std"]]
+lp = get_lp(stm, transf_mean, transf_std)
+th = [19, 0, 0, 0, 0, 0];
+lp(vcat(th, zeros(K)), stm.data, length(stm.data))
+
+
+transf_std * vcat(th, zeros(K)) + transf_mean
 
 st = State_θ(randn(twoK), randn(twoK)) 
 output = outp() ; 
 
-s = linearMetropolis(1e-1, st, stm) ;
-s = linearSGLD(1e-1, st, stm, 1; β=1.0, α=0.9, transf_mean = zeros(twoK), transf_std = Diagonal(ones(twoK))) ;
-conditionalSamplers.run!(st, s, stm, 1000, output) 
+s = linearMetropolis(1e1, st, stm) ;
+s = linearSGLD(1e-1, st, stm, 1; β=1.0, α=0.9, transf_mean = zeros(twoK), transf_std = Diagonal(ones(twoK))) ; 
+conditionalSamplers.run!(st, s, stm, 20000, output) 
 Summary(output)
 Histogram(output, [1, 2, 3, 4, 5, 6])
 Trajectory(output) 
